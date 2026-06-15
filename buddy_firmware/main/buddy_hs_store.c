@@ -77,7 +77,7 @@ static HsRecord* find_or_add(const uint8_t bssid[6]) {
 
 static void store_frame(HsRecord* r, uint8_t slot, const uint8_t* frame, uint16_t len) {
     if(slot >= HS_SLOTS || !frame || len == 0) return;
-    if(len > HS_FRAME_MAX) len = HS_FRAME_MAX;
+    if(len > HS_FRAME_MAX) return; /* reject oversized frames rather than silently truncating */
     memcpy(r->frame[slot], frame, len);
     r->len[slot] = len;
 }

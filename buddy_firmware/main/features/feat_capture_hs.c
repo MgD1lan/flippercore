@@ -99,6 +99,7 @@ static void rx_cb(void* buf, wifi_promiscuous_pkt_type_t type) {
     uint32_t next = (s_wr + 1) % CAP_POOL;
     if(next == s_rd) return; /* full — drop */
     CapPkt* slot = &s_pool[s_wr];
+    if((size_t)len > sizeof(slot->data)) return; /* explicit bound check on attacker-controlled len */
     memcpy(slot->data, payload, len);
     slot->len = (uint16_t)len;
     s_wr = next;
@@ -200,7 +201,7 @@ static esp_err_t feat_start(const uint8_t* args, uint8_t arg_len) {
     s_channel = (arg_len >= 1) ? args[0] : 0; /* 0 = hop */
     if(s_channel > CAP_CHANNEL_MAX) s_channel = 0;
 
-    s_pool = malloc(sizeof(CapPkt) * CAP_POOL);
+    s_pool = calloc(CAP_POOL, sizeof(CapPkt));
     if(!s_pool) {
         buddy_node_feature_status(FEAT_ID, BuddyFeatStateError, NULL, 0);
         return ESP_ERR_NO_MEM;
