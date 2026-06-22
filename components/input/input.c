@@ -12,7 +12,7 @@
 #include <furi.h>
 
 #define TAG "Input"
-#define INPUT_POLL_MS 20U
+#define INPUT_POLL_MS 4U
 
 const char* input_get_key_name(InputKey key) {
     switch(key) {
