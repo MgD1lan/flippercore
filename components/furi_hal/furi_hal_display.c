@@ -32,10 +32,25 @@ static const char* TAG = "FuriHalDisplay";
 #define FB_WIDTH  128
 #define FB_HEIGHT 64
 
+/* Always-on left/right inset (in physical LCD pixels) kept as plain background
+ * color so the UI never sits flush against the screen's left/right edges. A
+ * board may override this in its board.h; otherwise this default applies
+ * everywhere. Set to 0 to disable. */
+#ifndef BOARD_LCD_SIDE_MARGIN
+#define BOARD_LCD_SIDE_MARGIN 4
+#endif
+#define DISPLAY_SIDE_MARGIN BOARD_LCD_SIDE_MARGIN
+
+/* Horizontal resolution actually available to the UI after reserving the
+ * left/right margins. The aspect-fit below scales into this, then the result
+ * is centered across the full LCD resolution — so the leftover on each side
+ * is always >= the margin and is painted with the background color. */
+#define USABLE_H_RES (LCD_H_RES - 2 * DISPLAY_SIDE_MARGIN)
+
 /* Scale the 128x64 framebuffer to the largest centered size that keeps aspect ratio. */
-#if (LCD_H_RES * FB_HEIGHT) <= (LCD_V_RES * FB_WIDTH)
-#define SCALED_WIDTH  LCD_H_RES
-#define SCALED_HEIGHT ((LCD_H_RES * FB_HEIGHT) / FB_WIDTH)
+#if (USABLE_H_RES * FB_HEIGHT) <= (LCD_V_RES * FB_WIDTH)
+#define SCALED_WIDTH  USABLE_H_RES
+#define SCALED_HEIGHT ((USABLE_H_RES * FB_HEIGHT) / FB_WIDTH)
 #else
 #define SCALED_HEIGHT LCD_V_RES
 #define SCALED_WIDTH  ((LCD_V_RES * FB_WIDTH) / FB_HEIGHT)
@@ -127,7 +142,7 @@ static void display_fill_color(uint16_t color) {
  * commit path to keep the LCD margins in sync with fg_color changes. */
 static void display_paint_rect(
     size_t x, size_t y, size_t w, size_t h, uint16_t color) {
-    if(w == 0 || h == 0 || w > SCALED_WIDTH) return;
+    if(w == 0 || h == 0 || w > LCD_H_RES) return;
 
     for(size_t y_off = 0; y_off < h; y_off += STRIPE_HEIGHT) {
         size_t chunk_h = h - y_off;
@@ -158,7 +173,7 @@ void furi_hal_display_init(void) {
         .sclk_io_num = gpio_lcd_clk.pin,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = SCALED_WIDTH * STRIPE_HEIGHT * sizeof(uint16_t),
+        .max_transfer_sz = LCD_H_RES * STRIPE_HEIGHT * sizeof(uint16_t),
     };
     esp_err_t spi_err = spi_bus_initialize(LCD_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO);
     /* ESP_ERR_INVALID_STATE is OK — bus may already be initialized by SubGHz on shared-bus boards */
@@ -254,8 +269,10 @@ void furi_hal_display_init(void) {
 
     furi_hal_display_init_scale_lut();
 
-    /* Allocate DMA-capable RGB565 stripe buffer (STRIPE_HEIGHT lines only) */
-    size_t stripe_bytes = SCALED_WIDTH * STRIPE_HEIGHT * sizeof(uint16_t);
+    /* Allocate DMA-capable RGB565 stripe buffer (STRIPE_HEIGHT lines only).
+     * Sized to the full LCD width so the same scratch buffer can paint the
+     * full-width top/bottom margin strips as well as the scaled UI stripes. */
+    size_t stripe_bytes = LCD_H_RES * STRIPE_HEIGHT * sizeof(uint16_t);
     rgb565_buf = heap_caps_malloc(stripe_bytes, MALLOC_CAP_DMA);
     if(!rgb565_buf) {
         ESP_LOGE(TAG, "Failed to allocate RGB565 stripe buffer (%d bytes)",
@@ -286,16 +303,25 @@ void furi_hal_display_commit(const uint8_t* data, uint32_t size) {
      */
     furi_hal_spi_bus_lock();
 
-    /* Repaint top/bottom margin strips with the current fg_color every frame
-     * so the entire screen tracks UI Color changes. Without this the init-time
-     * fill persists and the margins keep showing the boot-time orange while
-     * the central framebuffer area updates. Side strips (MARGIN_X) skipped;
-     * SCALED_WIDTH = LCD_H_RES on T-Embed Plus so MARGIN_X=0 in practice. */
+    /* Repaint the margin strips with the current fg_color every frame so the
+     * entire screen tracks UI Color changes. Without this the init-time fill
+     * persists and the margins keep showing the boot-time orange while the
+     * central framebuffer area updates.
+     *
+     * Top/bottom strips span the full width; left/right strips (the always-on
+     * DISPLAY_SIDE_MARGIN inset, plus any extra from aspect-fit centering) span
+     * only the height of the scaled image so they don't overdraw the corners. */
     if(MARGIN_Y > 0) {
-        display_paint_rect(MARGIN_X, 0, SCALED_WIDTH, MARGIN_Y, fg_color);
+        display_paint_rect(0, 0, LCD_H_RES, MARGIN_Y, fg_color);
         display_paint_rect(
-            MARGIN_X, MARGIN_Y + SCALED_HEIGHT,
-            SCALED_WIDTH, LCD_V_RES - MARGIN_Y - SCALED_HEIGHT, fg_color);
+            0, MARGIN_Y + SCALED_HEIGHT,
+            LCD_H_RES, LCD_V_RES - MARGIN_Y - SCALED_HEIGHT, fg_color);
+    }
+    if(MARGIN_X > 0) {
+        display_paint_rect(0, MARGIN_Y, MARGIN_X, SCALED_HEIGHT, fg_color);
+        display_paint_rect(
+            MARGIN_X + SCALED_WIDTH, MARGIN_Y,
+            LCD_H_RES - MARGIN_X - SCALED_WIDTH, SCALED_HEIGHT, fg_color);
     }
 
     for(size_t stripe_y = 0; stripe_y < SCALED_HEIGHT; stripe_y += STRIPE_HEIGHT) {
