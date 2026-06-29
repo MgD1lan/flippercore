@@ -11,6 +11,14 @@ extern "C" {
 
 extern const FuriHalBleProfileTemplate* ble_profile_hid;
 
+/** HID profile parameters, passed to bt_profile_start() as profile params.
+ * Part of the public API upstream; exported here so external apps (e.g. the
+ * authenticator's BT auto-type worker) can configure name prefix and MAC. */
+typedef struct {
+    uint16_t mac_xor;
+    const char* device_name_prefix;
+} BleProfileHidParams;
+
 FuriHalBleProfileBase* ble_profile_hid_start_with_config(
     const FuriHalBleProfileTemplate* profile_template,
     const GapConfig* config);

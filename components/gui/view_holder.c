@@ -160,6 +160,26 @@ static void view_holder_input_callback(InputEvent* event, void* context) {
         return;
     }
 
+    // T-Embed rotary encoder: mirror the LeftRight/UpDown remap from
+    // view_dispatcher_handle_input so ViewHolder-hosted views (dialog_message_show,
+    // file_browser, ...) honor ViewInputModeLeftRight too. The encoder is a single
+    // rotary axis emitting Up/Down; LeftRight views (e.g. DialogEx Yes/No) would
+    // otherwise be unreachable. Only remap the 1-axis HARDWARE source; touch
+    // (INPUT_SEQUENCE_SOURCE_TOUCH) is genuinely 2-axis. Bookkeeping above uses
+    // the original key, consistent across Press/Short/Release.
+    if(view_holder->view && event->sequence_source == INPUT_SEQUENCE_SOURCE_HARDWARE) {
+        ViewInputMode mode = view_get_input_mode(view_holder->view);
+        if(mode == ViewInputModeLeftRight) {
+            if(event->key == InputKeyUp) event->key = InputKeyLeft;
+            else if(event->key == InputKeyDown) event->key = InputKeyRight;
+            else if(event->key == InputKeyLeft) event->key = InputKeyDown;
+            else if(event->key == InputKeyRight) event->key = InputKeyUp;
+        } else if(mode == ViewInputModeUpDown) {
+            if(event->key == InputKeyLeft) event->key = InputKeyDown;
+            else if(event->key == InputKeyRight) event->key = InputKeyUp;
+        }
+    }
+
     bool is_consumed = false;
 
     if(view_holder->view) {

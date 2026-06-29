@@ -10,6 +10,14 @@ extern "C" {
 
 #define FURI_HAL_CRYPTO_ENCLAVE_UNIQUE_KEY_SLOT (11u)
 
+// Upstream STM32 firmware splits the enclave into factory slots (1-10, shared
+// across all devices) and user slots (12-100, per-device). This port stubs the
+// enclave and only provides the per-device UNIQUE slot (11). Apps that pick a
+// "user" slot to avoid the shared factory keys (e.g. the authenticator) map
+// onto the unique slot here.
+#define FURI_HAL_CRYPTO_ENCLAVE_USER_KEY_SLOT_START FURI_HAL_CRYPTO_ENCLAVE_UNIQUE_KEY_SLOT
+#define FURI_HAL_CRYPTO_ENCLAVE_USER_KEY_SLOT_END   FURI_HAL_CRYPTO_ENCLAVE_UNIQUE_KEY_SLOT
+
 typedef enum {
     FuriHalCryptoKeyTypeMaster,
     FuriHalCryptoKeyTypeSimple,
