@@ -20,3 +20,15 @@ multi-boot/bruce/
 # Managed components are pulled by IDF component manager from idf_component.yml
 # + dependencies.lock; the source-of-truth is those two files.
 managed_components/
+
+# Local development snapshots and generated release artifacts
+.backups/
+*.before-*
+*.after-*
+*.bak
+*.orig
+*.rej
+*~
+releases/*.zip
+*-backup-*
+*.backup-*

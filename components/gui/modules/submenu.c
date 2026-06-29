@@ -89,14 +89,14 @@ static void submenu_process_down(Submenu* submenu);
 static void submenu_process_ok(Submenu* submenu, InputType input_type);
 
 static size_t submenu_items_on_screen(SubmenuModel* model) {
-    size_t res = (model->is_vertical) ? 8 : 4;
+    size_t res = (model->is_vertical) ? 10 : 4;
     return (furi_string_empty(model->header)) ? res : res - 1;
 }
 
 static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
     SubmenuModel* model = _model;
 
-    const uint8_t item_height = 16;
+    const uint8_t item_height = model->is_vertical ? 12 : 16;
     uint8_t item_width = canvas_width(canvas) - 5;
 
     canvas_clear(canvas);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <furi_hal_infrared.h>
-#include <infrared.h>
+#include "../encoder_decoder/infrared.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
