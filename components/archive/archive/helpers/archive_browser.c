@@ -304,9 +304,9 @@ ArchiveFile_t* archive_get_current_file(ArchiveBrowserView* browser) {
         browser->view,
         ArchiveBrowserViewModel * model,
         {
-            selected = files_array_size(model->files) ?
-                           files_array_get(model->files, model->item_idx - model->array_offset) :
-                           NULL;
+            size_t size = files_array_size(model->files);
+            size_t idx = model->item_idx - model->array_offset;
+            selected = (size && idx < size) ? files_array_get(model->files, idx) : NULL;
         },
         false);
     return selected;
