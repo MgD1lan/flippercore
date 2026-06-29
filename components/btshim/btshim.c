@@ -18,6 +18,7 @@
 #include <rpc/rpc.h>
 #include <esp_log.h>
 #include <esp_bt.h>
+#include <esp_heap_caps.h>
 #include <esp_bt_main.h>
 #include <esp_gap_ble_api.h>
 #include <ble_serial.h>
@@ -259,18 +260,32 @@ static void bt_rpc_send_bytes_callback(void* context, uint8_t* bytes, size_t byt
         size_t chunk = (bytes_remain > bt->max_packet_size) ? bt->max_packet_size : bytes_remain;
         bool ok = ble_profile_serial_tx(bt->current_profile, &bytes[bytes_sent], chunk);
         if(!ok) {
-            BT_LOG_E("TX chunk failed at offset %zu/%zu", bytes_sent, bytes_len);
+            /* Indication couldn't be queued — usually the controller is out of
+             * internal RAM (BLE_INIT: Malloc failed). Drop the frame instead of
+             * wedging the session; the next frame is a fresh attempt. */
+            BT_LOG_E(
+                "TX chunk failed at offset %zu/%zu (free internal=%zu)",
+                bytes_sent,
+                bytes_len,
+                heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
             break;
         }
         bytes_sent += chunk;
 
+        /* Wait for the client's indication-confirm (flow control). Capped at 1s:
+         * a stalled confirm means the controller never sent the packet, so block
+         * briefly and drop the frame — blocking the full 3s only backs up the GUI
+         * worker and gives the GATT indication-confirm watchdog time to kill the
+         * whole connection. */
         uint32_t event_flag = furi_event_flag_wait(
-            bt->rpc_event, BT_RPC_EVENT_ALL, FuriFlagWaitAny | FuriFlagNoClear, 3000);
+            bt->rpc_event, BT_RPC_EVENT_ALL, FuriFlagWaitAny | FuriFlagNoClear, 1000);
         if(event_flag & BT_RPC_EVENT_DISCONNECTED) {
             BT_LOG_W("TX aborted: disconnected during send");
             break;
         } else if(event_flag == (uint32_t)FuriStatusErrorTimeout) {
-            BT_LOG_E("TX timeout waiting for confirmation");
+            BT_LOG_E(
+                "TX confirm timeout, dropping frame (free internal=%zu)",
+                heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
             break;
         } else {
             furi_event_flag_clear(bt->rpc_event, BT_RPC_EVENT_ALL & (~BT_RPC_EVENT_DISCONNECTED));

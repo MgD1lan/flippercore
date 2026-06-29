@@ -4,6 +4,7 @@
 #include <subghz/types.h>
 #include <lib/toolbox/path.h>
 #include <float_tools.h>
+#include <esp_heap_caps.h>
 #include "subghz_i.h"
 
 #define TAG "SubGhzApp"
@@ -433,7 +434,19 @@ int32_t subghz_app(void* p) {
         alloc_for_tx = false;
     }
 
+    FURI_LOG_I(
+        TAG,
+        "heap before alloc: internal=%zu spiram=%zu",
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
     SubGhz* subghz = subghz_alloc(alloc_for_tx);
+
+    FURI_LOG_I(
+        TAG,
+        "heap after alloc:  internal=%zu spiram=%zu",
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     if(alloc_for_tx) {
         subghz->raw_send_only = true;
