@@ -766,6 +766,19 @@ FS_Error storage_common_rename(Storage* storage, const char* old_path, const cha
     return FSE_OK;
 }
 
+FS_Error storage_common_migrate(Storage* storage, const char* source, const char* dest) {
+    furi_check(storage);
+    // ESP32 port: upstream implements this via storage_common_merge (a recursive
+    // directory merge), which this port doesn't have. Migration is a legacy path
+    // (apps relocating their old data dir) that realistically never triggers on
+    // ESP32 since there's no pre-existing data, so a plain rename covers the
+    // common case. If there's nothing to migrate, succeed silently.
+    if(!storage_common_exists(storage, source)) {
+        return FSE_OK;
+    }
+    return storage_common_rename(storage, source, dest);
+}
+
 FS_Error storage_common_copy(Storage* storage, const char* old_path, const char* new_path) {
     furi_assert(storage);
 

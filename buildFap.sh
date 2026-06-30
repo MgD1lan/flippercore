@@ -77,6 +77,7 @@ TARGETS=(
 
 # ── Common include paths (project-level) ────────────────────────────
 COMMON_INCLUDES=(
+    -I"$PROJECT_DIR/components/compat"
     -I"$PROJECT_DIR/components"
     -I"$PROJECT_DIR"
     -I"$PROJECT_DIR/components/furi"
@@ -103,6 +104,7 @@ COMMON_INCLUDES=(
     -I"$PROJECT_DIR/components/furi_hal"
     -I"$PROJECT_DIR/components/furi_hal/boards"
     -I"$PROJECT_DIR/components/furi_ble"
+    -I"$PROJECT_DIR/components/ble_profile"
     -I"$PROJECT_DIR/components/bt"
     -I"$PROJECT_DIR/components/btshim"
     -I"$PROJECT_DIR/components/subghz"
@@ -168,6 +170,11 @@ IDF_COMMON_INCLUDES=(
 
 # ── Common compiler flags ───────────────────────────────────────────
 COMMON_CFLAGS=(
+    # Force malloc() -> calloc() (zeroed heap) like the STM32 firmware does in
+    # components/furi/core/memmgr.h. The ESP32 heap is NOT zeroed; upstream apps
+    # routinely rely on calloc-like behavior (struct pointer fields left unset
+    # then guarded by `if(p) free(p)`), which is garbage -> crash on ESP32.
+    -include "$SCRIPT_DIR/tools/fap_zeroed_heap.h"
     -D_GNU_SOURCE
     -fno-common
     -ffunction-sections
@@ -302,6 +309,10 @@ build_for_target() {
 
     TARGET_CFLAGS+=(-DFAP_VERSION=\"1.0\")
     [ -n "$FAP_CDEFINES" ] && TARGET_CFLAGS+=($FAP_CDEFINES)
+    # Extra compiler flags (space-separated), e.g. to relax GCC 14 warnings
+    # that upstream apps written for older toolchains trip over:
+    #   FAP_EXTRA_CFLAGS="-Wno-incompatible-pointer-types -Wno-int-conversion"
+    [ -n "$FAP_EXTRA_CFLAGS" ] && TARGET_CFLAGS+=($FAP_EXTRA_CFLAGS)
 
     # Generate icon assets from fap_icon_assets if defined in application.fam
     local ICON_ASSETS_DIR=""
@@ -326,10 +337,31 @@ build_for_target() {
         fi
     fi
 
+    # Honor fap_private_libs[].sources: apps may vendor a big library (e.g.
+    # wolfssl) but only build a subset of it. fap_lib_info.py reads the .fam and
+    # tells us which lib dirs to exclude from the blanket glob, which lib sources
+    # to build instead, and the per-lib cdefines/cincludes/cflags to apply.
+    local -a LIB_EXCLUDE_DIRS=()
+    local -a LIB_SOURCES=()
+    if [ -f "$APP_DIR/application.fam" ]; then
+        local LIB_INFO
+        LIB_INFO=$(python3 "$SCRIPT_DIR/tools/fap_lib_info.py" "$APP_DIR" 2>/dev/null || true)
+        while IFS=$'\t' read -r kind val; do
+            case "$kind" in
+                LIBDIR)   LIB_EXCLUDE_DIRS+=("$APP_DIR/lib/$val") ;;
+                SOURCE)   LIB_SOURCES+=("$APP_DIR/$val") ;;
+                CDEFINE)  TARGET_CFLAGS+=("-D$val") ;;
+                CINCLUDE) TARGET_INCLUDES+=(-I"$APP_DIR/$val") ;;
+                CFLAG)    TARGET_CFLAGS+=("$val") ;;
+            esac
+        done <<< "$LIB_INFO"
+    fi
+
     # Find source files. Priority:
     #   FAP_SOURCES        - explicit space-separated list (multi-source plugin)
     #   FAP_SINGLE_SOURCE  - one source (single-source plugin)
-    #   else               - whole app dir
+    #   else               - whole app dir, minus excluded private-lib dirs,
+    #                        plus the selected private-lib sources
     local -a C_SOURCES=()
     local -a CXX_SOURCES=()
     if [ -n "$FAP_SOURCES" ]; then
@@ -337,8 +369,20 @@ build_for_target() {
     elif [ -n "$FAP_SINGLE_SOURCE" ]; then
         C_SOURCES=("$FAP_SINGLE_SOURCE")
     else
-        C_SOURCES=($(find "$APP_DIR" -name '*.c' -type f))
-        CXX_SOURCES=($(find "$APP_DIR" -name '*.cpp' -type f))
+        # Build a prune expression for the excluded private-lib directories.
+        local -a PRUNE=()
+        for d in "${LIB_EXCLUDE_DIRS[@]}"; do
+            PRUNE+=(-path "$d" -prune -o)
+        done
+        C_SOURCES=($(find "$APP_DIR" "${PRUNE[@]}" -name '*.c' -type f -print))
+        CXX_SOURCES=($(find "$APP_DIR" "${PRUNE[@]}" -name '*.cpp' -type f -print))
+        # Add the selected private-lib sources back in.
+        for s in "${LIB_SOURCES[@]}"; do
+            case "$s" in
+                *.cpp) CXX_SOURCES+=("$s") ;;
+                *)     C_SOURCES+=("$s") ;;
+            esac
+        done
     fi
     # Add generated icon .c files
     if [ -d "$ICONS_GEN_DIR" ]; then

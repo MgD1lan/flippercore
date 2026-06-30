@@ -565,8 +565,15 @@ static bool start_http(void) {
 
     ESP_LOGI(TAG, "httpd_start: port=%u max_uri=%u max_sockets=%u",
              config.server_port, config.max_uri_handlers, config.max_open_sockets);
-    if(httpd_start(&s_http, &config) != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_start failed");
+    esp_err_t herr = httpd_start(&s_http, &config);
+    if(herr != ESP_OK) {
+        // Fehlercode + Heap-Lage loggen, damit RAM (ESP_ERR_HTTPD_ALLOC_MEM /
+        // ESP_ERR_NO_MEM) eindeutig von Socket-/Arg-Fehlern (ESP_ERR_INVALID_ARG)
+        // unterschieden werden kann.
+        ESP_LOGE(TAG, "httpd_start failed: %s (0x%x)", esp_err_to_name(herr), (unsigned)herr);
+        ESP_LOGE(TAG, "  internal heap: free=%u largest_block=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         return false;
     }
     ESP_LOGI(TAG, "httpd_start OK, handle=%p", s_http);
@@ -1252,6 +1259,11 @@ bool wlan_hal_evil_portal_start(const WlanHalEvilPortalConfig* cfg) {
 
     ESP_LOGI(TAG, "start: free internal heap before init: %lu",
              (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    ESP_LOGI(TAG, "start: largest free internal block: %u",
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    // Aufschlüsselung des internen Heaps (Free/Allocated/Largest-Block) ins Log,
+    // damit klar wird, wer das interne RAM belegt.
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
     EpStartArgs sa = {.cfg = cfg, .result = false};
     if(!wlan_hal_run_in_worker(evil_portal_start_worker, &sa)) {
