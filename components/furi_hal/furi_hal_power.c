@@ -17,6 +17,8 @@
 #include <driver/i2c.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 #include <driver/gpio.h>
 
 #include <freertos/FreeRTOS.h>
@@ -399,46 +401,91 @@ bool furi_hal_power_is_charging_done(void) {
     return furi_hal_power_is_charging() && (furi_hal_power_get_pct() >= 100);
 }
 
-void furi_hal_power_shutdown(void) {
-    /* Wait for button release to avoid immediate wakeup */
-    while(gpio_get_level((gpio_num_t)BOARD_PIN_BUTTON_BOOT) == 0) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    vTaskDelay(pdMS_TO_TICKS(200)); /* debounce */
-
-    /* Cut the backlight: the LEDC PWM duty is irrelevant once the peripheral
-     * powers down in deep sleep, so drive the pin to its OFF level and latch it
-     * with gpio_hold so it does not float back ON (the backlight LED is the
-     * single biggest idle drain at ~20-60 mA). */
-#ifdef BOARD_PIN_LCD_BL
-    furi_hal_display_set_backlight(0);
-    gpio_set_direction((gpio_num_t)BOARD_PIN_LCD_BL, GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)BOARD_PIN_LCD_BL, BOARD_LCD_BL_ACTIVE_LOW ? 1 : 0);
-    gpio_hold_en((gpio_num_t)BOARD_PIN_LCD_BL);
+/* Physical button used to both confirm power-off (must be released first) and
+ * to wake the device back up from deep sleep. Mirrors Bruce, where the T-Embed
+ * CC1101 sleeps on and wakes from the side "ESC"/Back key (BK_BTN = GPIO6),
+ * NOT the encoder/BOOT button. BOARD_PIN_BUTTON_KEY is that same physical key. */
+#ifdef BOARD_PIN_BUTTON_KEY
+#define FURI_HAL_POWER_WAKE_PIN BOARD_PIN_BUTTON_KEY
+#else
+#define FURI_HAL_POWER_WAKE_PIN BOARD_PIN_BUTTON_BOOT
 #endif
 
-    /* Put the ST7789 panel to sleep (SLPIN) — saves another ~10-15 mA. */
+/* Hand the next boot to the launcher (Bruce) so that waking from deep sleep
+ * comes up in the multi-boot menu instead of straight back into this firmware.
+ * This is the exact mirror of Bruce's "Reboot to Flipper" menu entry
+ * (FlipperOsMenu: esp_ota_set_boot_partition() + reboot), just pointed the
+ * other way. We pick the "next" OTA slot — the one we are NOT running from —
+ * rather than a hardcoded partition, so it is correct no matter which slot
+ * booted us. If the launcher slot holds no valid image (single-app build, or
+ * the launcher was never flashed), esp_ota_set_boot_partition() fails and we
+ * fall back to cold-booting this firmware again — matching the user's rule of
+ * "boot the launcher if present, otherwise boot the default firmware". */
+static void furi_hal_power_select_launcher_boot(void) {
+    const esp_partition_t* launcher = esp_ota_get_next_update_partition(NULL);
+    if(launcher == NULL) {
+        ESP_LOGW(TAG, "No second app slot — staying on this firmware");
+        return;
+    }
+    const esp_err_t err = esp_ota_set_boot_partition(launcher);
+    if(err == ESP_OK) {
+        ESP_LOGI(TAG, "Next boot -> launcher partition '%s'", launcher->label);
+    } else {
+        ESP_LOGW(TAG, "Launcher partition not bootable (%s) — staying on this firmware",
+            esp_err_to_name(err));
+    }
+}
+
+/* Ported from Bruce's deep-sleep power-off (boards/lilygo-t-embed-cc1101/
+ * interface.cpp checkReboot()):
+ *
+ *     while (digitalRead(BK_BTN) == BTN_ACT);   // wait for ESC release
+ *     delay(200);
+ *     tft.sleep(true);
+ *     delay(1000);                              // debounce
+ *     digitalWrite(PIN_POWER_ON, LOW);          // cut peripheral power
+ *     esp_sleep_enable_ext0_wakeup(GPIO_NUM_6, LOW);
+ *     esp_deep_sleep_start();
+ *
+ * Kept intentionally minimal and free of any gpio_hold()/deep-sleep pin
+ * latching: Bruce does none, and latching the backlight pin LOW would survive
+ * the wake into the *next* firmware (the launcher), leaving it dark on a black
+ * screen — which looks exactly like "nothing happened". Waking on the ESC key
+ * re-runs the bootloader, which re-reads the OTA selection set above, so the
+ * device comes up in the launcher as if the RST button had been pressed. */
+void furi_hal_power_shutdown(void) {
+    /* Wait for the ESC/side key to be released so we don't immediately re-wake.
+     * (Bruce: `while (digitalRead(BK_BTN) == BTN_ACT);`) */
+    while(gpio_get_level((gpio_num_t)FURI_HAL_POWER_WAKE_PIN) == 0) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    vTaskDelay(pdMS_TO_TICKS(200)); /* Bruce: delay(200) */
+
+    /* Select the launcher for the next boot while the system is still fully
+     * alive (flash, clocks, RTOS all up) — must happen before deep sleep. */
+    furi_hal_power_select_launcher_boot();
+
+    /* Backlight off + panel to sleep. (Bruce: implicit BL off + tft.sleep(true))
+     * No gpio_hold — let the next firmware own the pins from a clean state. */
+#ifdef BOARD_PIN_LCD_BL
+    furi_hal_display_set_backlight(0);
+#endif
     furi_hal_display_sleep();
 
-    /* Power down peripherals (CC1101 + WS2812) */
+    vTaskDelay(pdMS_TO_TICKS(200)); /* short debounce before cutting power */
+
+    /* Cut peripheral power — CC1101 + NFC + WS2812. (Bruce: digitalWrite(
+     * PIN_POWER_ON, LOW) + powerDownNFC()/powerDownCC1101().) */
 #ifdef BOARD_PIN_PWR_EN
     gpio_set_level((gpio_num_t)BOARD_PIN_PWR_EN, 0);
 #endif
 
-    /* Keep the held GPIO levels latched across deep sleep. Only needed on
-     * targets without per-pin deep-sleep hold (e.g. ESP32-S3): there the
-     * global latch arms the gpio_hold_en() above. Targets that support
-     * single-IO hold in deep sleep (e.g. ESP32-C6) latch per pin already and
-     * don't provide gpio_deep_sleep_hold_en() — matches gpio.h's guard. */
-#if SOC_GPIO_SUPPORT_HOLD_IO_IN_DSLP && !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
-    gpio_deep_sleep_hold_en();
-#endif
-
-    /* Configure BOOT/encoder button (GPIO0) as wake-up source (active low) */
+    /* Wake on the ESC/side key (active low), matching Bruce's
+     * `esp_sleep_enable_ext0_wakeup(GPIO_NUM_6, LOW)`. */
 #if SOC_PM_SUPPORT_EXT0_WAKEUP
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)BOARD_PIN_BUTTON_BOOT, 0);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)FURI_HAL_POWER_WAKE_PIN, 0);
 #else
-    esp_deep_sleep_enable_gpio_wakeup(BIT(BOARD_PIN_BUTTON_BOOT), ESP_GPIO_WAKEUP_GPIO_LOW);
+    esp_deep_sleep_enable_gpio_wakeup(BIT(FURI_HAL_POWER_WAKE_PIN), ESP_GPIO_WAKEUP_GPIO_LOW);
 #endif
     esp_deep_sleep_start();
 }
