@@ -149,7 +149,6 @@ The desktop lock menu doubles as the central system control panel (board-depende
 - **qFlipper** — enable the qFlipper desktop bridge (VID/PID spoof + CDC RPC) so the official qFlipper app can connect *(USB-OTG boards)*
 - **USB Storage** — expose the SD card as a USB mass-storage device *(USB-OTG boards)*
 - **Bluetooth** — toggle BLE on/off
-- **Switch to Bruce** — reboot into the co-installed [Bruce](https://github.com/BruceDevices/firmware) firmware (when present on the second OTA slot)
 - **Mesh Clients** — buddy discovery & control *(see Mesh / Buddy above)*
 
 #### Archive

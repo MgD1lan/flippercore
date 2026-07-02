@@ -209,14 +209,13 @@ void furi_hal_display_init(void) {
     /* --- Bring the ST7789 to a known-clean state, every boot --------------
      * A software reset (esp_restart) does NOT power-cycle the display: the
      * ST7789 keeps every register — MADCTL/colour-order, COLMOD, inversion,
-     * rotation. That happens after an `esptool` flash *and* after switching
-     * back from the Bruce firmware (multi-boot). Bruce/TFT_eSPI configures
-     * the panel differently, and if any of that lingers the R/B channels end
-     * up swapped — Flipper orange shows up as blue — until the user pulls the
-     * battery (a real cold boot). So we do what a thorough driver (TFT_eSPI)
-     * does on every init: hardware-reset pulse → SWRESET command → full panel
-     * init → re-assert COLMOD. After that the panel is in *our* configuration
-     * regardless of what ran before. */
+     * rotation. That happens after an `esptool` flash *and* after any other
+     * firmware that configured the panel differently ran before us. If any of
+     * that lingers the R/B channels end up swapped — Flipper orange shows up as
+     * blue — until the user pulls the battery (a real cold boot). So we do what
+     * a thorough driver (TFT_eSPI) does on every init: hardware-reset pulse →
+     * SWRESET command → full panel init → re-assert COLMOD. After that the panel
+     * is in *our* configuration regardless of what ran before. */
 
     /* 1) Hardware reset pulse on RESX (HIGH → LOW → HIGH, generous timing). */
     gpio_config_t rst_cfg = {

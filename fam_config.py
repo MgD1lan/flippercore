@@ -110,11 +110,10 @@ if _board in _boards_without_nrf24:
 # while opening RECORD_DOLPHIN. Dropping either breaks the link / hangs the UI,
 # so they stay. The real RAM wins are BLE-off (~68KB) + smaller WiFi buffers.
 
-# qFlipper, USB-Storage and "Switch to Bruce" are no longer standalone apps —
-# they live in the desktop lock menu (applications/services/desktop). The menu
-# gates them itself: qFlipper / USB-Storage behind a compile-time USB-OTG check
-# (ESP32-S3/S2 only), Bruce behind a runtime ota_1-partition check. So there is
-# nothing to exclude here per board anymore.
+# qFlipper and USB-Storage are no longer standalone apps — they live in the
+# desktop lock menu (applications/services/desktop). The menu gates them itself:
+# qFlipper / USB-Storage behind a compile-time USB-OTG check (ESP32-S3/S2 only).
+# So there is nothing to exclude here per board anymore.
 # Note: nothing installs the TinyUSB composite at boot — doing so would switch
 # the internal USB PHY to OTG and kill the USB-Serial-JTAG bridge that esptool
 # uses, breaking the next `./buildAndFlash_T-Embed.sh` cycle. The composite is

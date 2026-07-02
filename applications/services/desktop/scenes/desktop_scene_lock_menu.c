@@ -3,9 +3,6 @@
 
 #include <btshim.h>
 
-#include <esp_partition.h>
-#include <esp_ota_ops.h>
-
 #include "../desktop_i.h"
 #include "../views/desktop_view_lock_menu.h"
 #include "../helpers/qflipper_bridge.h"
@@ -23,32 +20,6 @@
 void desktop_scene_lock_menu_callback(DesktopEvent event, void* context) {
     Desktop* desktop = (Desktop*)context;
     view_dispatcher_send_custom_event(desktop->view_dispatcher, event);
-}
-
-/* "Switch to Bruce" only makes sense when a second OTA firmware is flashed. */
-static bool desktop_lock_menu_bruce_available(void) {
-    return esp_partition_find_first(
-               ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL) != NULL;
-}
-
-/* Point the OTA boot slot at the Bruce firmware (ota_1) and reboot into it.
- * Bruce has the mirror-image entry that points back at ota_0. See
- * 00_Skills/multi-boot.md. */
-static void desktop_lock_menu_switch_to_bruce(void) {
-    const esp_partition_t* target =
-        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
-    if(target == NULL) {
-        FURI_LOG_E("DesktopBruce", "no 'Bruce' partition - not a multi-boot image?");
-        return;
-    }
-    esp_err_t err = esp_ota_set_boot_partition(target);
-    if(err != ESP_OK) {
-        FURI_LOG_E("DesktopBruce", "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        return;
-    }
-    FURI_LOG_I("DesktopBruce", "rebooting into Bruce");
-    furi_delay_ms(100);
-    furi_hal_power_reset();
 }
 
 static bool desktop_lock_menu_bt_enabled(void) {
@@ -75,8 +46,7 @@ static void desktop_scene_lock_menu_refresh(Desktop* desktop) {
         desktop->lock_menu,
         LOCK_MENU_USB_AVAILABLE,
         qflipper_bridge_is_active(),
-        desktop_lock_menu_bt_enabled(),
-        desktop_lock_menu_bruce_available());
+        desktop_lock_menu_bt_enabled());
 }
 
 void desktop_scene_lock_menu_on_enter(void* context) {
@@ -115,11 +85,6 @@ bool desktop_scene_lock_menu_on_event(void* context, SceneManagerEvent event) {
         case DesktopLockMenuEventBluetoothToggle:
             desktop_lock_menu_set_bt_enabled(!desktop_lock_menu_bt_enabled());
             desktop_scene_lock_menu_refresh(desktop);
-            consumed = true;
-            break;
-
-        case DesktopLockMenuEventBruce:
-            desktop_lock_menu_switch_to_bruce(); /* reboots; returns only on error */
             consumed = true;
             break;
 
