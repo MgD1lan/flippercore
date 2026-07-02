@@ -434,7 +434,7 @@ int32_t subghz_app(void* p) {
         alloc_for_tx = false;
     }
 
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "heap before alloc: internal=%zu spiram=%zu",
         heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
@@ -442,7 +442,7 @@ int32_t subghz_app(void* p) {
 
     SubGhz* subghz = subghz_alloc(alloc_for_tx);
 
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "heap after alloc:  internal=%zu spiram=%zu",
         heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
