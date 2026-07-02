@@ -32,6 +32,7 @@ struct Power {
     PowerInfo info;
 
     bool battery_low;
+    bool shutdown_pending_usb;
     bool show_battery_low_warning;
     uint8_t displayBatteryPercentage;
     bool is_otg_requested;

@@ -7,6 +7,10 @@ struct PowerUnplugUsb {
     View* view;
 };
 
+typedef struct {
+    bool cancelled;
+} PowerUnplugUsbModel;
+
 static void power_unplug_usb_draw_callback(Canvas* canvas, void* _model) {
     UNUSED(_model);
 
@@ -18,16 +22,31 @@ static void power_unplug_usb_draw_callback(Canvas* canvas, void* _model) {
     canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontPrimary);
     elements_multiline_text_aligned(
-        canvas, 64, 32, AlignCenter, AlignCenter, "It's now safe to unplug\nthe USB cable");
+        canvas, 64, 28, AlignCenter, AlignCenter, "Unplug the USB cable\nto power off");
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str_aligned(canvas, 64, 44, AlignCenter, AlignCenter, "Back to cancel");
+}
+
+
+static bool power_unplug_usb_input_callback(InputEvent* event, void* context) {
+    PowerUnplugUsb* power_unplug_usb = context;
+    if(event->type == InputTypeShort && event->key == InputKeyBack) {
+        with_view_model(
+            power_unplug_usb->view, PowerUnplugUsbModel * model, { model->cancelled = true; }, true);
+        return true;
+    }
+    return false;
 }
 
 PowerUnplugUsb* power_unplug_usb_alloc(void) {
     PowerUnplugUsb* power_unplug_usb = malloc(sizeof(PowerUnplugUsb));
 
     power_unplug_usb->view = view_alloc();
+    view_allocate_model(
+        power_unplug_usb->view, ViewModelTypeLocking, sizeof(PowerUnplugUsbModel));
     view_set_context(power_unplug_usb->view, power_unplug_usb);
     view_set_draw_callback(power_unplug_usb->view, power_unplug_usb_draw_callback);
-    view_set_input_callback(power_unplug_usb->view, NULL);
+    view_set_input_callback(power_unplug_usb->view, power_unplug_usb_input_callback);
 
     return power_unplug_usb;
 }
@@ -41,4 +60,18 @@ void power_unplug_usb_free(PowerUnplugUsb* power_unplug_usb) {
 View* power_unplug_usb_get_view(PowerUnplugUsb* power_unplug_usb) {
     furi_assert(power_unplug_usb);
     return power_unplug_usb->view;
+}
+
+bool power_unplug_usb_is_cancelled(PowerUnplugUsb* power_unplug_usb) {
+    furi_assert(power_unplug_usb);
+    bool cancelled;
+    with_view_model(
+        power_unplug_usb->view, PowerUnplugUsbModel * model, { cancelled = model->cancelled; }, false);
+    return cancelled;
+}
+
+void power_unplug_usb_reset(PowerUnplugUsb* power_unplug_usb) {
+    furi_assert(power_unplug_usb);
+    with_view_model(
+        power_unplug_usb->view, PowerUnplugUsbModel * model, { model->cancelled = false; }, false);
 }
