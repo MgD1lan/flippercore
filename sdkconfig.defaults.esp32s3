@@ -25,6 +25,15 @@ CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
 # TX stall -> GATT timeout -> disconnect.
 CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
 
+# Don't cache PHY calibration in NVS. With BT buffers in PSRAM (above), the NVS
+# flash-write that phy_init does on boot ("Saving new calibration data") briefly
+# stalls the shared flash/PSRAM MSPI cache; a BLE controller ISR touching a
+# PSRAM-resident buffer in that window deadlocks in wait-for-intr -> the 300 ms
+# interrupt watchdog fires (TG1WDT_SYS_RST) -> intermittent boot loop. Disabling
+# the NVS store removes that flash-write entirely; the PHY is (re)calibrated on
+# every boot instead (a few ms, no RF quality loss).
+# CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set
+
 # PSRAM: T-Embed CC1101 has 8MB PSRAM
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
