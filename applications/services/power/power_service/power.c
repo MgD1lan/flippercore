@@ -360,33 +360,11 @@ void power_trigger_ui_update(Power* power) {
 }
 
 static void power_handle_shutdown(Power* power) {
-    if(furi_hal_power_get_usb_voltage() >= POWER_VBUS_LOW_THRESHOLD) {
-        power_unplug_usb_reset(power->view_power_unplug_usb);
-        power->shutdown_pending_usb = true;
-        view_holder_send_to_front(power->view_holder);
-        view_holder_set_view(
-            power->view_holder, power_unplug_usb_get_view(power->view_power_unplug_usb));
-        return;
-    }
+    UNUSED(power);
     furi_hal_power_off();
     /* furi_hal_power_off() should not return (enters deep sleep).
      * If it does, halt as fallback. */
     furi_halt("Power off failed");
-}
-
-static void power_check_unplug_usb(Power* power) {
-    if(!power->shutdown_pending_usb) {
-        return;
-    }
-    if(power_unplug_usb_is_cancelled(power->view_power_unplug_usb)) {
-        /* User pressed Back — abort the power-off, hide the hint. */
-        power->shutdown_pending_usb = false;
-        view_holder_set_view(power->view_holder, NULL);
-    } else if(power->info.voltage_vbus < POWER_VBUS_LOW_THRESHOLD) {
-        /* Cable pulled — VBUS check now passes, so this really powers off. */
-        power->shutdown_pending_usb = false;
-        power_off(power);
-    }
 }
 
 static void power_handle_reboot(PowerBootMode mode) {
@@ -622,8 +600,6 @@ static void power_tick_callback(void* context) {
     const bool need_refresh = power_update_info(power);
     // Check low battery level
     power_check_low_battery(power);
-    // Finish/cancel a power-off deferred because USB-C was connected
-    power_check_unplug_usb(power);
     // Check and notify about charging state
     power_check_charging_state(power);
     // Check and notify about battery level change

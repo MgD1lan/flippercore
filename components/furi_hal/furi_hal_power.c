@@ -17,8 +17,6 @@
 #include <driver/i2c.h>
 #include <esp_system.h>
 #include <esp_timer.h>
-#include <esp_ota_ops.h>
-#include <esp_partition.h>
 #include <driver/gpio.h>
 
 #include <freertos/FreeRTOS.h>
@@ -401,92 +399,51 @@ bool furi_hal_power_is_charging_done(void) {
     return furi_hal_power_is_charging() && (furi_hal_power_get_pct() >= 100);
 }
 
-/* Physical button used to both confirm power-off (must be released first) and
- * to wake the device back up from deep sleep. Mirrors Bruce, where the T-Embed
- * CC1101 sleeps on and wakes from the side "ESC"/Back key (BK_BTN = GPIO6),
- * NOT the encoder/BOOT button. BOARD_PIN_BUTTON_KEY is that same physical key. */
-#ifdef BOARD_PIN_BUTTON_KEY
-#define FURI_HAL_POWER_WAKE_PIN BOARD_PIN_BUTTON_KEY
-#else
-#define FURI_HAL_POWER_WAKE_PIN BOARD_PIN_BUTTON_BOOT
-#endif
-
-/* Hand the next boot to the launcher (Bruce) so that waking from deep sleep
- * comes up in the multi-boot menu instead of straight back into this firmware.
- * This is the exact mirror of Bruce's "Reboot to Flipper" menu entry
- * (FlipperOsMenu: esp_ota_set_boot_partition() + reboot), just pointed the
- * other way. We pick the "next" OTA slot — the one we are NOT running from —
- * rather than a hardcoded partition, so it is correct no matter which slot
- * booted us. If the launcher slot holds no valid image (single-app build, or
- * the launcher was never flashed), esp_ota_set_boot_partition() fails and we
- * fall back to cold-booting this firmware again — matching the user's rule of
- * "boot the launcher if present, otherwise boot the default firmware". */
-static void furi_hal_power_select_launcher_boot(void) {
-    const esp_partition_t* launcher = esp_ota_get_next_update_partition(NULL);
-    if(launcher == NULL) {
-        ESP_LOGW(TAG, "No second app slot — staying on this firmware");
-        return;
-    }
-    const esp_err_t err = esp_ota_set_boot_partition(launcher);
-    if(err == ESP_OK) {
-        ESP_LOGI(TAG, "Next boot -> launcher partition '%s'", launcher->label);
-    } else {
-        ESP_LOGW(TAG, "Launcher partition not bootable (%s) — staying on this firmware",
-            esp_err_to_name(err));
-    }
-}
-
-/* Ported from Bruce's deep-sleep power-off (boards/lilygo-t-embed-cc1101/
- * interface.cpp checkReboot()):
- *
- *     while (digitalRead(BK_BTN) == BTN_ACT);   // wait for ESC release
- *     delay(200);
- *     tft.sleep(true);
- *     delay(1000);                              // debounce
- *     digitalWrite(PIN_POWER_ON, LOW);          // cut peripheral power
- *     esp_sleep_enable_ext0_wakeup(GPIO_NUM_6, LOW);
- *     esp_deep_sleep_start();
- *
- * Kept intentionally minimal and free of any gpio_hold()/deep-sleep pin
- * latching: Bruce does none, and latching the backlight pin LOW would survive
- * the wake into the *next* firmware (the launcher), leaving it dark on a black
- * screen — which looks exactly like "nothing happened". Waking on the ESC key
- * re-runs the bootloader, which re-reads the OTA selection set above, so the
- * device comes up in the launcher as if the RST button had been pressed. */
 void furi_hal_power_shutdown(void) {
-    /* Wait for the ESC/side key to be released so we don't immediately re-wake.
-     * (Bruce: `while (digitalRead(BK_BTN) == BTN_ACT);`) */
-    while(gpio_get_level((gpio_num_t)FURI_HAL_POWER_WAKE_PIN) == 0) {
+    /* Wait for button release to avoid immediate wakeup */
+    while(gpio_get_level((gpio_num_t)BOARD_PIN_BUTTON_BOOT) == 0) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    vTaskDelay(pdMS_TO_TICKS(200)); /* Bruce: delay(200) */
+    vTaskDelay(pdMS_TO_TICKS(200)); /* debounce */
 
-    /* Select the launcher for the next boot while the system is still fully
-     * alive (flash, clocks, RTOS all up) — must happen before deep sleep. */
-    furi_hal_power_select_launcher_boot();
-
-    /* Backlight off + panel to sleep. (Bruce: implicit BL off + tft.sleep(true))
-     * No gpio_hold — let the next firmware own the pins from a clean state. */
+    /* Backlight + panel off.
+     *
+     * Deliberately NO gpio_hold_en() / gpio_deep_sleep_hold_en() here. Holding
+     * digital IOs across deep sleep makes esp_deep_sleep_start() run
+     * esp_sleep_isolate_digital_gpio(), which assert-fails with "the stack of the
+     * task calling esp_deep_sleep_start must be in internal ram" — and the
+     * power-service FuriThread stack lives in PSRAM (SPIRAM_ALLOW_STACK_EXTERNAL
+     * + SPIRAM_MALLOC_ALWAYSINTERNAL=1024 pushes the 4 KB stack external). That
+     * assert panicked (reset_reason=4) and rebooted on every power-off. Without
+     * the hold, the isolation step is skipped and deep sleep starts cleanly. */
 #ifdef BOARD_PIN_LCD_BL
     furi_hal_display_set_backlight(0);
 #endif
     furi_hal_display_sleep();
 
-    vTaskDelay(pdMS_TO_TICKS(200)); /* short debounce before cutting power */
-
-    /* Cut peripheral power — CC1101 + NFC + WS2812. (Bruce: digitalWrite(
-     * PIN_POWER_ON, LOW) + powerDownNFC()/powerDownCC1101().) */
+    /* Power down peripherals (CC1101 + WS2812) */
 #ifdef BOARD_PIN_PWR_EN
     gpio_set_level((gpio_num_t)BOARD_PIN_PWR_EN, 0);
 #endif
 
-    /* Wake on the ESC/side key (active low), matching Bruce's
-     * `esp_sleep_enable_ext0_wakeup(GPIO_NUM_6, LOW)`. */
+    /* Wake on the BOOT/encoder button (GPIO0, active low). Its external
+     * boot-strapping pull-up keeps it HIGH across deep sleep, so it does not
+     * re-wake immediately — unlike the side key (GPIO6), which floats LOW and
+     * rebooted the device instantly (regression from the multi-boot PR). */
 #if SOC_PM_SUPPORT_EXT0_WAKEUP
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)FURI_HAL_POWER_WAKE_PIN, 0);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)BOARD_PIN_BUTTON_BOOT, 0);
 #else
-    esp_deep_sleep_enable_gpio_wakeup(BIT(FURI_HAL_POWER_WAKE_PIN), ESP_GPIO_WAKEUP_GPIO_LOW);
+    esp_deep_sleep_enable_gpio_wakeup(BIT(BOARD_PIN_BUTTON_BOOT), ESP_GPIO_WAKEUP_GPIO_LOW);
 #endif
+    /* Clear the deep-sleep GPIO auto-hold bit. It lives in the RTC domain
+     * (RTC_CNTL_DIG_ISO_REG) and SURVIVES resets/panics, so a firmware that once
+     * called gpio_deep_sleep_hold_en() leaves it set for every later boot. While
+     * it is set, esp_deep_sleep_start() runs esp_sleep_isolate_digital_gpio(),
+     * which assert-fails because our power-service stack is in PSRAM -> panic ->
+     * reboot. Only a full power-cycle would clear it otherwise, which is exactly
+     * why the reboot persisted across re-flashes. Disabling it unconditionally
+     * makes power-off deterministic regardless of what ran before. */
+    gpio_deep_sleep_hold_dis();
     esp_deep_sleep_start();
 }
 
