@@ -51,6 +51,7 @@ typedef struct {
     bool sequence_complete;
     volatile bool stop_requested;
     rmt_channel_handle_t channel;
+    bool channel_enabled;
     rmt_encoder_handle_t encoder;
 } FuriHalSubGhzAsyncTx;
 
@@ -351,15 +352,18 @@ static esp_err_t furi_hal_subghz_async_tx_alloc_backend(FuriHalSubGhzAsyncTx* as
         return error;
     }
 
-    return rmt_enable(async_tx->channel);
+    error = rmt_enable(async_tx->channel);
+    async_tx->channel_enabled = (error == ESP_OK);
+    return error;
 }
 
 static void furi_hal_subghz_async_tx_free_backend(FuriHalSubGhzAsyncTx* async_tx) {
-    if(async_tx->channel) {
+    if(async_tx->channel && async_tx->channel_enabled) {
         esp_err_t error = rmt_disable(async_tx->channel);
-        if(error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
+        if(error != ESP_OK) {
             ESP_LOGW(TAG, "Failed to disable RMT TX channel: %s", esp_err_to_name(error));
         }
+        async_tx->channel_enabled = false;
     }
 
     if(async_tx->encoder) {
@@ -400,7 +404,7 @@ static void furi_hal_subghz_log_probe(const FuriHalSubGhzProbe* probe, bool conn
     furi_check(probe);
 
     if(connected) {
-        ESP_LOGI(
+        ESP_LOGD(
             TAG,
             "CC1101 probe OK: part=0x%02X version=0x%02X status=0x%02X reset_status=0x%02X",
             probe->partnumber,
@@ -691,7 +695,7 @@ uint32_t furi_hal_subghz_set_frequency(uint32_t value) {
     cc1101_wait_status_state(&furi_hal_spi_bus_handle_subghz, CC1101StateIDLE, 10000);
     furi_hal_spi_release(&furi_hal_spi_bus_handle_subghz);
 
-    ESP_LOGI(TAG, "set_frequency: requested=%lu real=%lu", (unsigned long)value, (unsigned long)real_frequency);
+    ESP_LOGD(TAG, "set_frequency: requested=%lu real=%lu", (unsigned long)value, (unsigned long)real_frequency);
     furi_hal_subghz.frequency = real_frequency;
     return real_frequency;
 }
@@ -738,7 +742,7 @@ void furi_hal_subghz_set_path(FuriHalSubGhzPath path) {
 void furi_hal_subghz_start_async_rx(FuriHalSubGhzCaptureCallback callback, void* context) {
     furi_check(callback);
 
-    ESP_LOGI(TAG, "start_async_rx: GDO0=GPIO%d freq=%lu connected=%d",
+    ESP_LOGD(TAG, "start_async_rx: GDO0=GPIO%d freq=%lu connected=%d",
         gpio_cc1101_g0.pin, (unsigned long)furi_hal_subghz.frequency, furi_hal_subghz.connected);
 
     furi_hal_subghz.async_rx_callback = callback;
@@ -756,7 +760,7 @@ void furi_hal_subghz_start_async_rx(FuriHalSubGhzCaptureCallback callback, void*
     furi_hal_spi_acquire(&furi_hal_spi_bus_handle_subghz);
     CC1101Status status = cc1101_get_status(&furi_hal_spi_bus_handle_subghz);
     furi_hal_spi_release(&furi_hal_spi_bus_handle_subghz);
-    ESP_LOGI(TAG, "start_async_rx: CC1101 status=0x%02X state=%d gdo0_level=%d irq_count=%lu",
+    ESP_LOGD(TAG, "start_async_rx: CC1101 status=0x%02X state=%d gdo0_level=%d irq_count=%lu",
         status.raw, cc1101_status_state(status),
         furi_hal_gpio_read(&gpio_cc1101_g0),
         (unsigned long)furi_hal_subghz_rx_irq_count);
@@ -861,13 +865,9 @@ void furi_hal_subghz_stop_async_tx(void) {
     FuriHalSubGhzAsyncTx* async_tx = &furi_hal_subghz.async_tx;
     async_tx->stop_requested = true;
 
-    if(async_tx->channel && !furi_hal_subghz.async_tx_complete) {
-        esp_err_t error = rmt_disable(async_tx->channel);
-        if(error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
-            ESP_LOGW(TAG, "Failed to abort RMT transmission: %s", esp_err_to_name(error));
-        }
-    }
-
+    /* free_backend() disables the channel, which also aborts a transmission
+       still in flight — no separate abort call (it would fail with
+       INVALID_STATE and make the RMT driver log an error). */
     furi_hal_subghz_async_tx_free_backend(async_tx);
 
     furi_hal_gpio_init(&gpio_cc1101_g0, GpioModeInput, GpioPullNo, GpioSpeedLow);

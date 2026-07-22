@@ -204,6 +204,27 @@ void furi_thread_scrub(void) {
     }
 }
 
+/* Task stacks must live in internal RAM: an NVS/flash write suspends the whole
+   cache (flash *and* PSRAM), so any stack spill from a PSRAM-resident stack in
+   that window faults inside the exception handler → DoubleException → TG1WDT
+   reset with no panic output. Fall back to PSRAM only if internal RAM is
+   exhausted, and shout about it so the next such crash is traceable. */
+static StackType_t* furi_thread_alloc_stack(const char* name, uint32_t stack_size) {
+    StackType_t* buffer = heap_caps_malloc(stack_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if(!buffer) {
+        buffer = heap_caps_malloc(stack_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        FURI_LOG_E(
+            TAG,
+            "Stack for '%s' (%lu B) fell back to PSRAM — internal heap exhausted (%u B free, "
+            "largest block %u B). This thread will crash if it writes to flash/NVS.",
+            name ? name : "?",
+            (unsigned long)stack_size,
+            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    }
+    return buffer;
+}
+
 FuriThread* furi_thread_alloc(void) {
     /* FuriThread contains StaticTask_t (TCB) which FreeRTOS requires in internal RAM */
     FuriThread* thread = heap_caps_calloc(1, sizeof(FuriThread), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -218,12 +239,14 @@ FuriThread* furi_thread_alloc_service(
     uint32_t stack_size,
     FuriThreadCallback callback,
     void* context) {
-    FuriThread* thread = memmgr_alloc_from_pool(sizeof(FuriThread));
-    memset(thread, 0, sizeof(FuriThread));
+    /* TCB (StaticTask_t) must live in internal RAM — FreeRTOS touches it from
+       ISR context and while the cache is suspended. */
+    FuriThread* thread = heap_caps_calloc(1, sizeof(FuriThread), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    furi_check(thread);
 
     furi_thread_init_common(thread);
 
-    thread->stack_buffer = memmgr_alloc_from_pool(stack_size);
+    thread->stack_buffer = furi_thread_alloc_stack(name, stack_size);
     thread->stack_size = stack_size;
     thread->is_service = true;
 
@@ -301,15 +324,7 @@ void furi_thread_set_stack_size(FuriThread* thread, size_t stack_size) {
     /* ESP32 needs larger stacks than STM32 (deeper SPI/FATFS call chains) */
     if(stack_size < 4096) stack_size = 4096;
 
-    /* Prefer internal SRAM — flash/NVS writes disable the PSRAM cache and
-       cause a DoubleException on a PSRAM-resident stack. For apps that do
-       not write to flash/NVS (e.g. the Doom port, which only reads from
-       the SD card on a separate SPI bus) we fall back to PSRAM when the
-       internal heap cannot satisfy the request. */
-    thread->stack_buffer = heap_caps_malloc(stack_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if(!thread->stack_buffer) {
-        thread->stack_buffer = heap_caps_malloc(stack_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    }
+    thread->stack_buffer = furi_thread_alloc_stack(thread->name, stack_size);
     thread->stack_size = stack_size;
 }
 
