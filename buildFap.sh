@@ -374,6 +374,12 @@ build_for_target() {
         for d in "${LIB_EXCLUDE_DIRS[@]}"; do
             PRUNE+=(-path "$d" -prune -o)
         done
+        # Never glob host-only test harnesses (tests/ dirs hold their own main()
+        # and duplicate registry stubs -> "multiple definition" at link time) or
+        # a vendored .git dir. These are compiled separately (see tests/Makefile),
+        # never bundled into the FAP.
+        PRUNE+=(-name tests -type d -prune -o)
+        PRUNE+=(-name .git -type d -prune -o)
         C_SOURCES=($(find "$APP_DIR" "${PRUNE[@]}" -name '*.c' -type f -print))
         CXX_SOURCES=($(find "$APP_DIR" "${PRUNE[@]}" -name '*.cpp' -type f -print))
         # Add the selected private-lib sources back in.
