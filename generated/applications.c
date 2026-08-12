@@ -24,6 +24,7 @@ extern int32_t dialogs_srv(void* p);
 extern int32_t infrared_app(void* p);
 extern int32_t bt_srv(void* p);
 extern int32_t dolphin_srv(void* p);
+extern int32_t spoofing_settings_app(void* p);
 extern int32_t pocsag_pager_app(void* p);
 extern int32_t loader_srv(void* p);
 extern int32_t wifi_app(void* p);
@@ -40,6 +41,7 @@ extern void loader_on_system_start(void);
 extern void power_on_system_start(void);
 extern void locale_on_system_start(void);
 extern void subghz_dangerous_freq(void);
+extern void namechanger_on_system_start(void);
 
 const FlipperInternalApplication FLIPPER_SERVICES[] = {
     {.app = cli_vcp_srv, .name = "CliVcpSrv", .appid = "cli_vcp", .stack_size = 4096, .icon = NULL, .flags = FlipperInternalApplicationFlagDefault},
@@ -68,6 +70,7 @@ const FlipperInternalOnStartHook FLIPPER_ON_SYSTEM_START[] = {
     power_on_system_start,
     locale_on_system_start,
     subghz_dangerous_freq,
+    namechanger_on_system_start,
 };
 const size_t FLIPPER_ON_SYSTEM_START_COUNT = COUNT_OF(FLIPPER_ON_SYSTEM_START);
 
@@ -81,6 +84,7 @@ const FlipperInternalApplication FLIPPER_SYSTEM_APPS[] = {
     {.app = tetris_game_app, .name = "Tetris", .appid = "tetris", .stack_size = 4096, .icon = &I_tetris_10px, .flags = FlipperInternalApplicationFlagDefault},
     {.app = nfc_app, .name = "NFC", .appid = "nfc", .stack_size = 5120, .icon = &A_NFC_14, .flags = FlipperInternalApplicationFlagDefault},
     {.app = infrared_app, .name = "Infrared", .appid = "infrared", .stack_size = 8192, .icon = &A_Infrared_14, .flags = FlipperInternalApplicationFlagDefault},
+    {.app = spoofing_settings_app, .name = "Spoofing Options", .appid = "spoofing_settings", .stack_size = 4096, .icon = NULL, .flags = FlipperInternalApplicationFlagDefault},
     {.app = pocsag_pager_app, .name = "POCSAG Pager", .appid = "pocsag_pager", .stack_size = 4096, .icon = &I_pocsag_pager_10px, .flags = FlipperInternalApplicationFlagDefault},
     {.app = wifi_app, .name = "WiFi", .appid = "wifi", .stack_size = 8192, .icon = &A_Sub1ghz_14, .flags = FlipperInternalApplicationFlagDefault},
     {.app = ble_spam_app, .name = "Bluetooth", .appid = "ble_spam", .stack_size = 8192, .icon = &A_Plugins_14, .flags = FlipperInternalApplicationFlagDefault},
@@ -106,6 +110,7 @@ const FlipperInternalApplication FLIPPER_ARCHIVE =     {.app = archive_app, .nam
 const FlipperExternalApplication FLIPPER_EXTSETTINGS_APPS[] = {
     {.name = "About", .icon = &A_Settings_14, .path = "about"},
     {.name = "Bluetooth", .icon = &A_Settings_14, .path = "bt_settings"},
+    {.name = "Spoofing Options", .icon = NULL, .path = "spoofing_settings"},
     {.name = "Passport", .icon = NULL, .path = "passport"},
 };
 const size_t FLIPPER_EXTSETTINGS_APPS_COUNT = COUNT_OF(FLIPPER_EXTSETTINGS_APPS);

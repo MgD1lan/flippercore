@@ -30,6 +30,7 @@
 #include <nvs_flash.h>
 
 #include <furi_ble/gap.h>
+#include <furi_hal_version.h>
 
 /* Defined in furi_hal_bt.c — bridges BLE events to the BT service */
 extern void furi_hal_bt_emit_gap_event(GapEvent event);
@@ -941,8 +942,22 @@ static esp_err_t serial_configure_advertising(const BleSerialConfig* config) {
     if(!serial_append_adv_field(raw_adv, &raw_len, BLE_SERIAL_ADV_TYPE_FLAGS, &adv_flags, 1))
         return ESP_ERR_INVALID_SIZE;
 
-    /* Advertise 16-bit UUID 0x3080 (same as STM32 — this is what qFlipper scans for) */
-    const uint8_t svc_uuid16[] = {0x80, 0x30};  /* 0x3080 little-endian */
+    /* Advertise 16-bit service UUID: 0x3080 (serial RPC, what qFlipper scans
+     * for) OR-ed with the shell color bits — 0x3081/0x3082/0x3083 map to
+     * Black/White/Transparent shells and let qFlipper mobile show the right
+     * color on the searching screen without connecting. Same scheme as the
+     * STM32 Flipper (gap.c: "advertise service 16 bit uid depending on
+     * flipper color"). */
+    uint16_t svc_uuid = 0x3080;
+    FuriHalVersionColor color = furi_hal_version_get_hw_color();
+    if(color == FuriHalVersionColorBlack) {
+        svc_uuid |= 0x0001;
+    } else if(color == FuriHalVersionColorWhite) {
+        svc_uuid |= 0x0002;
+    } else if(color == FuriHalVersionColorTransparent) {
+        svc_uuid |= 0x0003;
+    }
+    const uint8_t svc_uuid16[] = {(uint8_t)(svc_uuid & 0xFF), (uint8_t)(svc_uuid >> 8)};
     if(!serial_append_adv_field(raw_adv, &raw_len, 0x03 /* Complete 16-bit UUID */, svc_uuid16, 2))
         return ESP_ERR_INVALID_SIZE;
 
@@ -1261,6 +1276,31 @@ void ble_serial_stop_advertising(void) {
         serial_state.advertising = false;
     }
     serial_unlock_global();
+}
+
+void ble_serial_refresh_advertising(void) {
+    serial_lock_global();
+    BleSerial* active = serial_state.active;
+    if(!active) {
+        serial_unlock_global();
+        return;
+    }
+    bool restart = serial_state.advertising_requested;
+    if(serial_state.advertising) {
+        esp_ble_gap_stop_advertising();
+        serial_state.advertising = false;
+    }
+    serial_unlock_global();
+
+    /* ESP-IDF forbids reconfiguring adv data while advertising is active, so
+     * stop → reconfigure (rebuilds the color-coded service UUID) → restart. */
+    if(serial_configure_advertising(&active->config) != ESP_OK) {
+        ESP_LOGE(TAG, "refresh_advertising: reconfigure failed");
+        return;
+    }
+    if(restart) {
+        ble_serial_start_advertising();
+    }
 }
 
 bool ble_serial_is_advertising(void) {
