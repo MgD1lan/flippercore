@@ -2,12 +2,13 @@
 
 #include <stdint.h>
 
-#define DISPLAY_BATTERY_BAR              0
-#define DISPLAY_BATTERY_PERCENT          1
-#define DISPLAY_BATTERY_INVERTED_PERCENT 2
-#define DISPLAY_BATTERY_RETRO_3          3
-#define DISPLAY_BATTERY_RETRO_5          4
-#define DISPLAY_BATTERY_BAR_PERCENT      5
+#define DISPLAY_BATTERY_OFF                6
+#define DISPLAY_BATTERY_BAR                0
+#define DISPLAY_BATTERY_PERCENT            1
+#define DISPLAY_BATTERY_INVERTED_PERCENT   2
+#define DISPLAY_BATTERY_RETRO_3            3
+#define DISPLAY_BATTERY_RETRO_5            4
+#define DISPLAY_BATTERY_BAR_PERCENT        5
 
 #ifdef __cplusplus
 extern "C" {

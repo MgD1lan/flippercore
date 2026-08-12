@@ -29,6 +29,7 @@ APPS = [
     "namechanger_srv",
     "spoofing_settings",
     "notification_settings",
+    "interface_settings",
     "desktop",
     "archive",
     "about",

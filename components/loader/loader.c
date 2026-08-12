@@ -123,6 +123,15 @@ void loader_show_menu(Loader* loader) {
     furi_message_queue_put(loader->queue, &message, FuriWaitForever);
 }
 
+void loader_show_settings(Loader* loader) {
+    furi_check(loader);
+
+    LoaderMessage message;
+    message.type = LoaderMessageTypeShowSettings;
+
+    furi_message_queue_put(loader->queue, &message, FuriWaitForever);
+}
+
 FuriPubSub* loader_get_pubsub(Loader* loader) {
     furi_check(loader);
     return loader->pubsub;
@@ -361,6 +370,13 @@ static void loader_do_menu_show(Loader* loader) {
     }
 }
 
+static void loader_do_settings_show(Loader* loader) {
+    if(!loader->loader_menu) {
+        loader->loader_menu = loader_menu_alloc_settings_first(
+            loader_menu_closed_callback, loader);
+    }
+}
+
 static void loader_do_menu_closed(Loader* loader) {
     if(loader->loader_menu) {
         loader_menu_free(loader->loader_menu);
@@ -555,6 +571,9 @@ int32_t loader_srv(void* p) {
             }
             case LoaderMessageTypeShowMenu:
                 loader_do_menu_show(loader);
+                break;
+            case LoaderMessageTypeShowSettings:
+                loader_do_settings_show(loader);
                 break;
             case LoaderMessageTypeMenuClosed:
                 loader_do_menu_closed(loader);

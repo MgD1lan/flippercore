@@ -74,6 +74,24 @@ void elements_scrollbar_pos(
  */
 void elements_scrollbar(Canvas* canvas, size_t pos, size_t total);
 
+/** Draw horizontal scrollbar on canvas.
+ * @note    height 3px, width given
+ *
+ * @param   canvas  Canvas instance
+ * @param   x       scrollbar position on X axis
+ * @param   y       scrollbar position on Y axis
+ * @param   width   scrollbar width
+ * @param   pos     current element of total elements
+ * @param   total   total elements
+ */
+void elements_scrollbar_horizontal(
+    Canvas* canvas,
+    int32_t x,
+    int32_t y,
+    size_t width,
+    size_t pos,
+    size_t total);
+
 /** Draw rounded frame
  *
  * @param   canvas          Canvas instance

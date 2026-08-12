@@ -43,6 +43,8 @@ bool loader_lock(Loader* instance);
 void loader_unlock(Loader* instance);
 bool loader_is_locked(Loader* instance);
 void loader_show_menu(Loader* instance);
+/** Open the loader menu directly on the Settings submenu. */
+void loader_show_settings(Loader* instance);
 FuriPubSub* loader_get_pubsub(Loader* instance);
 
 typedef enum {

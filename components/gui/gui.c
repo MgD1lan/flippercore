@@ -66,6 +66,8 @@ static bool gui_redraw_fs(Gui* gui) {
 }
 
 static void gui_redraw_status_bar(Gui* gui, bool need_attention) {
+    if(gui->hide_statusbar_count > 0) return;
+
     ViewPortArray_it_t it;
     uint8_t left_used = 0;
     uint8_t right_used = 0;
@@ -510,6 +512,20 @@ bool gui_is_lockdown(const Gui* gui) {
     furi_check(gui);
 
     return gui->lockdown && !gui->lockdown_inhibit;
+}
+
+void gui_set_hide_statusbar(Gui* gui, bool hidden) {
+    furi_assert(gui);
+
+    gui_lock(gui);
+    if(hidden) {
+        gui->hide_statusbar_count++;
+    } else {
+        gui->hide_statusbar_count--;
+    }
+    gui_unlock(gui);
+
+    gui_update(gui);
 }
 
 Canvas* gui_direct_draw_acquire(Gui* gui) {
