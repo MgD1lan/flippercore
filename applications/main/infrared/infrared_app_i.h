@@ -21,6 +21,7 @@
 #include <gui/modules/button_menu.h>
 #include <gui/modules/button_panel.h>
 #include <gui/modules/variable_item_list.h>
+#include <gui/modules/widget.h>
 
 #include <rpc/rpc_app.h>
 #include <storage/storage.h>
@@ -119,6 +120,7 @@ struct InfraredApp {
     ViewStack* view_stack; /**< Standard view for displaying stacked interfaces. */
     InfraredDebugView* debug_view; /**< Custom view for displaying debug information. */
     InfraredMoveView* move_view; /**< Custom view for rearranging buttons in a remote. */
+    Widget* widget; /**< Standard view for displaying textual information with buttons. */
 
     ButtonPanel* button_panel; /**< Standard view for displaying control panels. */
     Loading* loading; /**< Standard view for informing about long operations. */
@@ -148,6 +150,7 @@ typedef enum {
     InfraredViewDebugView,
     InfraredViewMove,
     InfraredViewLoading,
+    InfraredViewWidget,
 } InfraredView;
 
 /**
