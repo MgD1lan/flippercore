@@ -231,9 +231,11 @@ static void encoder_button_poll(
         btn->had_encoder_rotation = false;
         btn->long_press_sent = false;
     } else {
-        if(btn->long_press_sent) {
-            /* End of a long press — emit Release so the consumer can
-             * stop whatever action was tied to the held key. */
+        /* Release. If we emitted Ok Press during rotation (see encoder_poll)
+         * or during the long-press threshold, always close it with a Release
+         * so consumers (e.g. the archive browser's ok_held flag) don't get
+         * stuck thinking Ok is still held. */
+        if(btn->long_press_sent || btn->had_encoder_rotation) {
             input_publish(pubsub, InputKeyOk, InputTypeRelease, ++(*sequence_counter));
         } else if(!btn->had_encoder_rotation) {
             /* Short press without rotation → emit Ok short */
@@ -275,6 +277,11 @@ static void encoder_poll(FuriPubSub* pubsub, uint32_t* sequence_counter) {
         encoder.accum = 0;
         bool cw = true;
         if(encoder_btn.debounced_pressed && !encoder_btn.long_press_sent) {
+            /* Rotating while the encoder button is held: emit an Ok Press
+             * first so consumers can detect "OK held" (used by the archive
+             * browser to block tab switching while opening the item menu),
+             * then the direction event. */
+            input_publish(pubsub, InputKeyOk, InputTypePress, ++(*sequence_counter));
             input_emit_short(pubsub, InputKeyRight, ++(*sequence_counter));
             encoder_btn.had_encoder_rotation = true;
         } else {
@@ -284,6 +291,7 @@ static void encoder_poll(FuriPubSub* pubsub, uint32_t* sequence_counter) {
         encoder.accum = 0;
         bool cw = false;
         if(encoder_btn.debounced_pressed && !encoder_btn.long_press_sent) {
+            input_publish(pubsub, InputKeyOk, InputTypePress, ++(*sequence_counter));
             input_emit_short(pubsub, InputKeyLeft, ++(*sequence_counter));
             encoder_btn.had_encoder_rotation = true;
         } else {

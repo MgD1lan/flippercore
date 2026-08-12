@@ -480,38 +480,38 @@ static bool is_file_list_load_required(ArchiveBrowserViewModel* model) {
 
 static inline void
     archive_view_menu_input_processing(ArchiveBrowserView* browser, InputEvent* event) {
-    // only InputShort type
-    if(event->key == InputKeyUp || event->key == InputKeyDown) {
+    // only InputShort/Long type
+    if(event->key == InputKeyUp || event->key == InputKeyDown || event->key == InputKeyLeft ||
+       event->key == InputKeyRight) {
         with_view_model(
             browser->view,
             ArchiveBrowserViewModel * model,
             {
                 size_t size_menu = menu_array_size(model->context_menu);
-                if(event->key == InputKeyUp) {
+                if(event->key == InputKeyUp || event->key == InputKeyLeft) {
                     model->menu_idx = ((model->menu_idx - 1) + size_menu) % size_menu;
-                } else if(event->key == InputKeyDown) {
+                } else {
                     model->menu_idx = (model->menu_idx + 1) % size_menu;
                 }
             },
             true);
-    } else if(event->key == InputKeyLeft || event->key == InputKeyRight) {
-        with_view_model(
-            browser->view,
-            ArchiveBrowserViewModel * model,
-            {
-                ArchiveFile_t* selected =
-                    files_array_get(model->files, model->item_idx - model->array_offset);
-
-                if(model->tab_idx != ArchiveTabFavorites) {
-                    model->menu_file_manage = !model->menu_file_manage;
-                    model->menu_idx = 0;
-                    menu_array_reset(model->context_menu);
-                    selected->fav =
-                        archive_is_favorite("%s", furi_string_get_cstr(selected->path));
-                }
-            },
-            true);
     } else if(event->key == InputKeyOk) {
+        if(event->type == InputTypeLong) {
+            /* Long-press Ok inside the menu switches between the item-action
+             * list and the file-manage list (folders/non-app files). */
+            with_view_model(
+                browser->view,
+                ArchiveBrowserViewModel * model,
+                {
+                    if(model->menu_can_switch) {
+                        model->menu_file_manage = !model->menu_file_manage;
+                        model->menu_idx = 0;
+                        menu_array_reset(model->context_menu);
+                    }
+                },
+                true);
+            return;
+        }
         uint32_t idx;
         with_view_model(
             browser->view,
@@ -551,7 +551,7 @@ static bool archive_view_input(InputEvent* event, void* context) {
         return false;
     }
     if(in_menu) {
-        if(event->type != InputTypeShort) {
+        if(event->type != InputTypeShort && event->type != InputTypeLong) {
             return true; // RETURN
         }
         archive_view_menu_input_processing(browser, event);
@@ -559,6 +559,15 @@ static bool archive_view_input(InputEvent* event, void* context) {
         if(event->type == InputTypeShort) {
             if(event->key == InputKeyLeft || event->key == InputKeyRight) {
                 if(move_fav_mode) return false;
+                // While OK is held (opening the item menu), Left/Right must
+                // not switch tabs — that would kick the user out of a folder.
+                bool ok_held;
+                with_view_model(
+                    browser->view,
+                    ArchiveBrowserViewModel * model,
+                    { ok_held = model->ok_held; },
+                    false);
+                if(ok_held) return false;
                 with_view_model(
                     browser->view,
                     ArchiveBrowserViewModel * model,
@@ -636,6 +645,20 @@ static bool archive_view_input(InputEvent* event, void* context) {
         }
 
         if(event->key == InputKeyOk) {
+            if(event->type == InputTypePress) {
+                with_view_model(
+                    browser->view,
+                    ArchiveBrowserViewModel * model,
+                    { model->ok_held = true; },
+                    true);
+            } else if(event->type == InputTypeRelease) {
+                with_view_model(
+                    browser->view,
+                    ArchiveBrowserViewModel * model,
+                    { model->ok_held = false; },
+                    true);
+            }
+
             ArchiveFile_t* selected = archive_get_current_file(browser);
 
             if(selected) {
@@ -655,9 +678,12 @@ static bool archive_view_input(InputEvent* event, void* context) {
                         browser->callback(ArchiveBrowserEventFileMenuOpen, browser->context);
                     }
                 } else if(event->type == InputTypeLong) {
+                    /* Long-press Ok opens the item menu for any file type
+                     * (folder, app, regular file) — this is the shortcut
+                     * reached while holding Ok and rotating the encoder. */
                     if(move_fav_mode) {
                         browser->callback(ArchiveBrowserEventSaveFavMove, browser->context);
-                    } else if(folder || favorites) {
+                    } else {
                         browser->callback(ArchiveBrowserEventFileMenuOpen, browser->context);
                     }
                 }
