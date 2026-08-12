@@ -29,6 +29,9 @@ struct Loader {
     Gui* gui;
     ViewHolder* view_holder;
     Loading* loading;
+
+    char* pending_name;
+    char* pending_args;
 };
 
 typedef enum {

@@ -128,7 +128,10 @@ static void desktop_loader_callback(const void* message, void* context) {
 
     if(event->type == LoaderEventTypeApplicationBeforeLoad) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalBeforeAppStarted);
-        furi_check(furi_semaphore_acquire(desktop->animation_semaphore, 3000) == FuriStatusOk);
+
+        if(furi_semaphore_acquire(desktop->animation_semaphore, 3000) != FuriStatusOk) {
+            FURI_LOG_W(TAG, "animation_semaphore timeout on app load");
+        }
     } else if(event->type == LoaderEventTypeNoMoreAppsInQueue) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAfterAppFinished);
     }

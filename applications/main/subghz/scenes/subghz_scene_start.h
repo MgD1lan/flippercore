@@ -12,4 +12,6 @@ enum SubmenuIndex {
     SubmenuIndexExtSettings,
     SubmenuIndexRadioSetting,
     SubmenuIndexPlaylist,
+    SubmenuIndexWmBurst,
+    SubmenuIndexProtoPirate,
 };
