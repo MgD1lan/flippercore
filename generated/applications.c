@@ -29,6 +29,7 @@ extern int32_t loader_srv(void* p);
 extern int32_t wifi_app(void* p);
 extern int32_t ble_spam_app(void* p);
 extern int32_t bad_usb_app(void* p);
+extern int32_t interface_settings_app(void* p);
 extern int32_t passport_app(void* p);
 extern int32_t clock_app(void* p);
 extern int32_t power_srv(void* p);
@@ -98,6 +99,7 @@ const FlipperInternalApplication FLIPPER_SETTINGS_APPS[] = {
     {.app = backlight_settings_app, .name = "Backlight", .appid = "backlight_settings", .stack_size = 4096, .icon = NULL, .flags = FlipperInternalApplicationFlagDefault},
     {.app = power_settings_app, .name = "Power", .appid = "power_settings", .stack_size = 4096, .icon = NULL, .flags = FlipperInternalApplicationFlagInsomniaSafe},
     {.app = storage_settings_app, .name = "Storage", .appid = "storage_settings", .stack_size = 4096, .icon = NULL, .flags = FlipperInternalApplicationFlagDefault},
+    {.app = interface_settings_app, .name = "Interface", .appid = "interface_settings", .stack_size = 4096, .icon = NULL, .flags = FlipperInternalApplicationFlagDefault},
 };
 const size_t FLIPPER_SETTINGS_APPS_COUNT = COUNT_OF(FLIPPER_SETTINGS_APPS);
 

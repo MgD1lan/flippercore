@@ -27,6 +27,7 @@ APPS = [
     "loader",
     "loader_start",
     "notification_settings",
+    "interface_settings",
     "desktop",
     "archive",
     "about",

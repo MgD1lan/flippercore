@@ -116,6 +116,32 @@ void elements_scrollbar(Canvas* canvas, size_t pos, size_t total) {
     }
 }
 
+void elements_scrollbar_horizontal(
+    Canvas* canvas,
+    int32_t x,
+    int32_t y,
+    size_t width,
+    size_t pos,
+    size_t total) {
+    furi_check(canvas);
+
+    // prevent overflows
+    canvas_set_color(canvas, ColorWhite);
+    canvas_draw_box(canvas, x, y, width, 3);
+
+    // dot line
+    canvas_set_color(canvas, ColorBlack);
+    for(size_t i = 0; i < width; i += 2) {
+        canvas_draw_dot(canvas, x + (int32_t)i, y + 1);
+    }
+
+    // Position block
+    if(total) {
+        float block_w = ((float)width) / total;
+        canvas_draw_box(canvas, x + (int32_t)(block_w * pos), y, MAX(block_w, 1), 3);
+    }
+}
+
 void elements_frame(Canvas* canvas, int32_t x, int32_t y, size_t width, size_t height) {
     furi_check(canvas);
 

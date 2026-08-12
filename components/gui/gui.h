@@ -127,6 +127,17 @@ void gui_set_lockdown_inhibit(Gui* gui, bool inhibit);
  */
 bool gui_is_lockdown(const Gui* gui);
 
+/** Hide or show the status bar
+ *
+ * The status bar is hidden when the hide counter is positive. Every "hide"
+ * call increments the counter, every "show" call decrements it, so nested
+ * sections must be balanced.
+ *
+ * @param      gui     Gui instance
+ * @param      hidden  bool, true to hide, false to show
+ */
+void gui_set_hide_statusbar(Gui* gui, bool hidden);
+
 /** Acquire Direct Draw lock and get Canvas instance
  *
  * This method return Canvas instance for use in monopoly mode. Direct draw lock
