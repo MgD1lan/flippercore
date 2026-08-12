@@ -240,6 +240,8 @@ static void text_input_view_draw_callback(Canvas* canvas, void* _model) {
     char buf[text_length + 1];
     if(model->text_buffer) {
         strlcpy(buf, model->text_buffer, sizeof(buf));
+    } else {
+        buf[0] = '\0';
     }
     char* str = buf;
 
