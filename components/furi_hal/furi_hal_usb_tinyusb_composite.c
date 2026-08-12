@@ -5,6 +5,7 @@
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S2
 
 #include <furi.h>
+#include <furi_hal_version.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -147,7 +148,8 @@ bool furi_hal_usb_composite_install(
 
     /* Strings */
     const char* manuf_str = (manuf && manuf[0]) ? manuf : "Flipper Devices Inc.";
-    const char* product_str = (product && product[0]) ? product : "Flipper Zero";
+    const char* product_str = (product && product[0]) ? product : furi_hal_version_get_name_ptr();
+    if(!product_str || !product_str[0]) product_str = "Flipper Zero";
     snprintf(s_manuf, sizeof(s_manuf), "%s", manuf_str);
     snprintf(s_product, sizeof(s_product), "%s", product_str);
     snprintf(s_serial, sizeof(s_serial), "FZESP32");

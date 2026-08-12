@@ -5,6 +5,8 @@
 #include <stdint.h>
 
 #include <esp_mac.h>
+#include <nvs_flash.h>
+#include <nvs.h>
 
 /* -------------------------------------------------------------------------
  * eFuse-derived device identity
@@ -48,6 +50,13 @@ typedef struct {
     uint8_t uid[6];
 } FuriHalVersionState;
 
+/* NVS key holding the user-spoofed device name (survives reboots regardless
+ * of SD-card presence; the SD copy in /ext/dolphin/name.settings is kept for
+ * compatibility with the stock namechanger service). */
+#define FURI_HAL_VERSION_NVS_NAMESPACE "furi_hal"
+#define FURI_HAL_VERSION_NVS_KEY       "dev_name"
+#define FURI_HAL_VERSION_NVS_COLOR_KEY "shell_color"
+
 static FuriHalVersionState furi_hal_version = {
     .name = "ESP32",
     .device_name = "Furi ESP32",
@@ -55,6 +64,55 @@ static FuriHalVersionState furi_hal_version = {
     .ble_mac = {0},
     .uid = {0},
 };
+
+static FuriHalVersionColor furi_hal_version_shell_color = FuriHalVersionColorUnknown;
+
+static void furi_hal_version_nvs_load(char* out, size_t out_size) {
+    nvs_handle_t handle;
+    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) return;
+    size_t len = out_size;
+    if(nvs_get_str(handle, FURI_HAL_VERSION_NVS_KEY, out, &len) != ESP_OK) {
+        out[0] = '\0';
+    }
+    nvs_close(handle);
+}
+
+static void furi_hal_version_nvs_store(const char* name) {
+    nvs_handle_t handle;
+    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
+    nvs_set_str(handle, FURI_HAL_VERSION_NVS_KEY, name);
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+static void furi_hal_version_nvs_color_load(void) {
+    nvs_handle_t handle;
+    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) return;
+    uint8_t value = FuriHalVersionColorUnknown;
+    nvs_get_u8(handle, FURI_HAL_VERSION_NVS_COLOR_KEY, &value);
+    nvs_close(handle);
+    if(value <= FuriHalVersionColorTransparent) {
+        furi_hal_version_shell_color = (FuriHalVersionColor)value;
+    }
+}
+
+static void furi_hal_version_nvs_color_store(void) {
+    nvs_handle_t handle;
+    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
+    nvs_set_u8(handle, FURI_HAL_VERSION_NVS_COLOR_KEY, (uint8_t)furi_hal_version_shell_color);
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+/* Refresh the BLE advertisement service UUID so qFlipper mobile picks up the
+ * new shell color while scanning (no reconnect needed). Declared via extern to
+ * keep furi_hal free of a ble_serial dependency — ble_serial itself links
+ * against furi_hal. */
+extern void ble_serial_refresh_advertising(void);
+
+static void furi_hal_version_refresh_ble_advertisement(void) {
+    ble_serial_refresh_advertising();
+}
 
 static void furi_hal_version_refresh_names(const char* name) {
     snprintf(furi_hal_version.name, sizeof(furi_hal_version.name), "%s", name);
@@ -77,12 +135,19 @@ void furi_hal_version_init(void) {
     esp_efuse_mac_get_default(furi_hal_version.uid);
     memcpy(furi_hal_version.ble_mac, furi_hal_version.uid, sizeof(furi_hal_version.uid));
 
-    /* Determine effective name:
-     *   1. If a custom name was already loaded (e.g., from namechanger), use it.
-     *   2. Otherwise derive a stable name from the eFuse MAC. */
+    /* Effective name precedence:
+     *   1. NVS user-spoofed name (set via Spoofing Options),
+     *   2. custom name loaded by namechanger (SD /ext/dolphin/name.settings),
+     *   3. stable name derived from the eFuse MAC. */
+    char nvs_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH] = {0};
+    furi_hal_version_nvs_load(nvs_name, sizeof(nvs_name));
+    furi_hal_version_nvs_color_load();
+
     const char* custom = version_get_custom_name(NULL);
     const char* effective;
-    if(custom && custom[0]) {
+    if(nvs_name[0]) {
+        effective = nvs_name;
+    } else if(custom && custom[0]) {
         effective = custom;
     } else {
         effective = s_device_name_pool[derive_name_index(furi_hal_version.uid)];
@@ -147,7 +212,16 @@ uint8_t furi_hal_version_get_hw_body(void) {
 }
 
 FuriHalVersionColor furi_hal_version_get_hw_color(void) {
-    return FuriHalVersionColorUnknown;
+    return furi_hal_version_shell_color;
+}
+
+void furi_hal_version_set_hw_color(FuriHalVersionColor color) {
+    if(color > FuriHalVersionColorTransparent) {
+        color = FuriHalVersionColorUnknown;
+    }
+    furi_hal_version_shell_color = color;
+    furi_hal_version_nvs_color_store();
+    furi_hal_version_refresh_ble_advertisement();
 }
 
 uint8_t furi_hal_version_get_hw_connect(void) {
@@ -194,9 +268,11 @@ void furi_hal_version_set_name(const char* name) {
     /* Accept NULL or empty string — fall back to the eFuse-derived name. */
     if(name && name[0]) {
         furi_hal_version_refresh_names(name);
+        furi_hal_version_nvs_store(furi_hal_version.name);
     } else {
         const char* derived = s_device_name_pool[derive_name_index(furi_hal_version.uid)];
         furi_hal_version_refresh_names(derived);
+        furi_hal_version_nvs_store(furi_hal_version.name);
     }
 }
 

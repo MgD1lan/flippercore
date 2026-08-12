@@ -87,6 +87,7 @@ void ble_serial_notify_buffer_is_empty(BleSerial* serial);
 
 bool ble_serial_start_advertising(void);
 void ble_serial_stop_advertising(void);
+void ble_serial_refresh_advertising(void);
 bool ble_serial_is_advertising(void);
 bool ble_serial_is_active(void);
 

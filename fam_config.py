@@ -26,6 +26,8 @@ APPS = [
     "power_settings",
     "loader",
     "loader_start",
+    "namechanger_srv",
+    "spoofing_settings",
     "notification_settings",
     "desktop",
     "archive",
