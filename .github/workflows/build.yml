@@ -37,9 +37,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        # The repository contains an orphaned gitlink without a .gitmodules URL.
-        # Recursive checkout therefore fails before any board can build.
         uses: actions/checkout@v5
+        with:
+          submodules: recursive
 
       - name: Clean stale sdkconfig
         run: |

@@ -48,14 +48,16 @@ static void bad_usb_load_settings(BadUsbApp* app) {
             if(!flipper_format_read_uint32(settings, "interface", &interface, 1)) break;
             if(interface > BadUsbHidInterfaceBle) break;
 
-            FileInfo layout_info;
-            if((storage_common_stat(storage, furi_string_get_cstr(value), &layout_info) != FSE_OK) ||
-               (layout_info.size != 256))
-                break;
-
             furi_string_set(app->keyboard_layout, value);
             app->interface = interface;
             loaded = true;
+
+            FileInfo layout_info;
+            if((storage_common_stat(
+                    storage, furi_string_get_cstr(app->keyboard_layout), &layout_info) != FSE_OK) ||
+               (layout_info.size != 256)) {
+                furi_string_set(app->keyboard_layout, BAD_USB_SETTINGS_DEFAULT_LAYOUT);
+            }
         } while(false);
     }
 

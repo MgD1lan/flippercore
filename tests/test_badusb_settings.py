@@ -27,7 +27,21 @@ class BadUsbSettingsTests(unittest.TestCase):
         ):
             self.assertIn(fragment, self.source)
 
-    def test_invalid_or_missing_layout_falls_back_safely(self):
+    def test_invalid_layout_preserves_a_valid_interface(self):
+        restore_layout = self.source.index("furi_string_set(app->keyboard_layout, value)")
+        restore_interface = self.source.index("app->interface = interface", restore_layout)
+        mark_loaded = self.source.index("loaded = true", restore_interface)
+        validate_layout = self.source.index("storage_common_stat(", mark_loaded)
+        fallback_layout = self.source.index(
+            "furi_string_set(app->keyboard_layout, BAD_USB_SETTINGS_DEFAULT_LAYOUT)",
+            validate_layout,
+        )
+        self.assertLess(restore_layout, restore_interface)
+        self.assertLess(restore_interface, mark_loaded)
+        self.assertLess(mark_loaded, validate_layout)
+        self.assertLess(validate_layout, fallback_layout)
+
+    def test_invalid_or_missing_settings_fall_back_safely(self):
         self.assertIn("layout_info.size != 256", self.source)
         self.assertIn("BAD_USB_SETTINGS_DEFAULT_LAYOUT", self.source)
         self.assertIn("if(!loaded)", self.source)
