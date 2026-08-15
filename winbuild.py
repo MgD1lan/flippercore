@@ -31,8 +31,12 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_ESP_IDF_DIR = r"C:\Espressif\frameworks\esp-idf-v5.4.1"
-DEFAULT_PORT = "COM14"
+DEFAULT_ESP_IDF_DIR = (
+    r"C:\Espressif\frameworks\esp-idf-v5.4.1"
+    if sys.platform == "win32"
+    else str(Path.home() / "esp" / "esp-idf")
+)
+DEFAULT_PORT = "COM14" if sys.platform == "win32" else "/dev/ttyUSB0"
 DEFAULT_DURATION = 8.0
 
 # Mirrors build.sh board mapping.
@@ -67,10 +71,12 @@ def env_for_idf(extra=None):
 
 
 def run_with_idf_env(esp_idf_dir: Path, args: str, extra_env=None) -> int:
-    # shell=True is required on Windows so cmd.exe parses the && and the quoted path
-    # in `call "..."`; passing as a list mangles the quoting.
-    cmd = f'call "{esp_idf_dir}\\export.bat" && idf.py {args}'
-    return subprocess.run(cmd, shell=True, env=env_for_idf(extra_env), cwd=str(REPO_ROOT)).returncode
+    if sys.platform == "win32":
+        cmd = f'call "{esp_idf_dir}\\export.bat" && idf.py {args}'
+        return subprocess.run(cmd, shell=True, env=env_for_idf(extra_env), cwd=str(REPO_ROOT)).returncode
+    else:
+        cmd = f'. "{esp_idf_dir}/export.sh" && idf.py {args}'
+        return subprocess.run(cmd, shell=True, executable="/bin/bash", env=env_for_idf(extra_env), cwd=str(REPO_ROOT)).returncode
 
 
 def cmd_setup(args):
