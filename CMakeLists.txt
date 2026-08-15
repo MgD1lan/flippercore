@@ -10,19 +10,26 @@ set(EXTRA_COMPONENT_DIRS "components")
 # ---------------------------------------------------------------------------
 set(_wifi_lib "$ENV{IDF_PATH}/components/esp_wifi/lib/esp32s3/libnet80211.a")
 find_program(_xt_ar NAMES xtensa-esp32s3-elf-ar
-    PATHS "$ENV{HOME}/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin" NO_DEFAULT_PATH)
+    PATHS "$ENV{IDF_TOOLS_PATH}/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin"
+          "$ENV{USERPROFILE}/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin"
+          "$ENV{HOME}/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin")
 find_program(_xt_objcopy NAMES xtensa-esp32s3-elf-objcopy
-    PATHS "$ENV{HOME}/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin" NO_DEFAULT_PATH)
+    PATHS "$ENV{IDF_TOOLS_PATH}/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin"
+          "$ENV{USERPROFILE}/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin"
+          "$ENV{HOME}/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin")
 
 if(_xt_ar AND _xt_objcopy AND EXISTS "${_wifi_lib}")
-    execute_process(
-        COMMAND "${CMAKE_SOURCE_DIR}/tools/patch_wifi_lib.py"
-            "${_wifi_lib}" "${_xt_objcopy}" "${_xt_ar}" "${_wifi_lib}"
-        RESULT_VARIABLE _patch_rc OUTPUT_VARIABLE _patch_out ERROR_VARIABLE _patch_err)
-    if(_patch_rc EQUAL 0)
-        message(STATUS "${_patch_out}")
-    else()
-        message(WARNING "WiFi lib patch failed: ${_patch_err}")
+    find_program(PYTHON_EXECUTABLE NAMES python3 python)
+    if(PYTHON_EXECUTABLE)
+        execute_process(
+            COMMAND "${PYTHON_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/patch_wifi_lib.py"
+                "${_wifi_lib}" "${_xt_objcopy}" "${_xt_ar}" "${_wifi_lib}"
+            RESULT_VARIABLE _patch_rc OUTPUT_VARIABLE _patch_out ERROR_VARIABLE _patch_err)
+        if(_patch_rc EQUAL 0)
+            message(STATUS "${_patch_out}")
+        else()
+            message(WARNING "WiFi lib patch failed: ${_patch_err}")
+        endif()
     endif()
 endif()
 

@@ -126,7 +126,7 @@ RMT-based TX + RX.
 
 
 #### Passy *(FAP)*
-Biometric passport (MRTD) reader — reads and displays data groups from ePassports over NFC. Shipped as a prebuilt FAP in [`sdcard/apps/`](sdcard/apps/).
+Biometric passport (MRTD) reader — reads and displays data groups from ePassports over NFC. Shipped as a prebuilt FAP in [sdcard.zip](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port/releases/download/v1.1.5/sdcard.zip).
 
 #### TagTinker *(FAP)*
 Infrared ESL (Electronic Shelf Label) research toolkit. Transmits custom images/text to graphics tags via IR. RLE streaming, Android companion app for image editing, monochrome + accent-color support.
@@ -191,7 +191,7 @@ Bluetooth, backlight, clock, dolphin/passport, expansion port, input, notificati
 | `/ext/wifi/evil_portal/login_template/` | Custom captive-portal templates (no verify) |
 | `/ext/wifi/evil_portal/router_template/` | Custom captive-portal templates (with WLAN verify) |
 
-A complete starter kit is in [`sdcard.zip`](sdcard.zip) — extract it onto a FAT32 SD.
+A complete starter kit is in [sdcard.zip](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port/releases/download/v1.1.5/sdcard.zip) — extract it onto a FAT32 SD.
 
 ## Building
 
@@ -210,8 +210,8 @@ A complete starter kit is in [`sdcard.zip`](sdcard.zip) — extract it onto a FA
 ./buildAndFlash_T-Embed.sh --build-only
 
 # Waveshare ESP32-C6
-./buildAndFlash_waveshare_c6_1.47.sh
-./buildAndFlash_waveshare_c6_1.9.sh
+./buildAndFlash_Waveshare_c6_1.47.sh
+./buildAndFlash_Waveshare_c6_1.9.sh
 ```
 
 ### Build & Flash (Windows)
@@ -241,7 +241,7 @@ python winbuild.py monitor --duration 30
 python winbuild.py all --port COM14
 ```
 
-Boards: `t_embed` (default), `esp32s3`, `waveshare_c6`. Override defaults with `ESP_IDF_DIR` and `ESPPORT` env vars. `monitor --reset` only works on USB-UART bridges, not on the ESP32-S3 native USB-Serial/JTAG — use `flash` or `all` to capture boot logs.
+Boards: `t_embed` (default), `esp32s3`, `waveshare_c6` (or `waveshare_c6_1.9`), `waveshare_c6_1.47`. Override defaults with `ESP_IDF_DIR` and `ESPPORT` env vars. `monitor --reset` only works on USB-UART bridges, not on the ESP32-S3 native USB-Serial/JTAG — use `flash` or `all` to capture boot logs.
 
 ### Build a FAP
 

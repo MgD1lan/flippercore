@@ -41,12 +41,22 @@ DEFAULT_DURATION = 8.0
 
 # Mirrors build.sh board mapping.
 BOARDS = {
-    "t_embed":      ("lilygo_t_embed_cc1101", "esp32s3", "build_t_embed"),
-    "esp32s3":      ("esp32s3_generic",       "esp32s3", "build_s3"),
-    "waveshare_c6": ("waveshare_c6_1.9",      "esp32c6", "build_waveshare_c6"),
+    "t_embed":           ("lilygo_t_embed_cc1101", "esp32s3", "build_t_embed"),
+    "esp32s3":           ("esp32s3_generic",       "esp32s3", "build_s3"),
+    "waveshare_c6":      ("waveshare_c6_1.9",      "esp32c6", "build_waveshare_c6"),
+    "waveshare_c6_1.9":  ("waveshare_c6_1.9",      "esp32c6", "build_waveshare_c6"),
+    "waveshare_c6_1.47": ("waveshare_c6_1.47",     "esp32c6", "build_waveshare_c6_1.47"),
 }
 
 REPO_ROOT = Path(__file__).resolve().parent
+
+
+def _board_cmake_args(flipper_board: str, build_dir: str) -> str:
+    args = f"-B {build_dir} -DFLIPPER_BOARD={flipper_board}"
+    board_defaults = REPO_ROOT / f"sdkconfig.defaults.{flipper_board}"
+    if board_defaults.exists():
+        args += f' -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.{flipper_board}"'
+    return args
 
 
 def get_esp_idf_dir() -> Path:
@@ -98,7 +108,7 @@ def cmd_check(args):
 def cmd_build(args):
     flipper_board, target, build_dir = BOARDS[args.board]
     _purge_stale_sdkconfig(target, build_dir)
-    common = f"-B {build_dir} -DFLIPPER_BOARD={flipper_board}"
+    common = _board_cmake_args(flipper_board, build_dir)
     esp_idf_dir = get_esp_idf_dir()
     # FLIPPER_BOARD must also be in the env: fam_config.py reads it via
     # os.environ to filter board-incompatible apps (e.g. NFC/IR on Waveshare C6).
@@ -112,9 +122,10 @@ def cmd_build(args):
 def cmd_flash(args):
     flipper_board, _, build_dir = BOARDS[args.board]
     port = get_port(args.port)
+    common = _board_cmake_args(flipper_board, build_dir)
     return run_with_idf_env(
         get_esp_idf_dir(),
-        f"-B {build_dir} -DFLIPPER_BOARD={flipper_board} -p {port} flash",
+        f"{common} -p {port} flash",
         {"FLIPPER_BOARD": flipper_board})
 
 
@@ -213,7 +224,8 @@ def cmd_cross_build(args):
     the shared root sdkconfig and breaks both builds.
     """
     esp_idf_dir = get_esp_idf_dir()
-    boards_to_build = args.boards if args.boards else list(BOARDS.keys())
+    default_boards = ["t_embed", "esp32s3", "waveshare_c6_1.9", "waveshare_c6_1.47"]
+    boards_to_build = args.boards if args.boards else default_boards
 
     print(f"[cross-build] Building {len(boards_to_build)} board(s): "
           f"{', '.join(boards_to_build)}")
@@ -231,7 +243,7 @@ def cmd_cross_build(args):
 
         _purge_stale_sdkconfig(target, build_dir)
 
-        common = f"-B {build_dir} -DFLIPPER_BOARD={flipper_board}"
+        common = _board_cmake_args(flipper_board, build_dir)
         extra = {"FLIPPER_BOARD": flipper_board}
 
         rc = run_with_idf_env(esp_idf_dir, f"{common} set-target {target}", extra)
