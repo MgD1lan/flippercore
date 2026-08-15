@@ -97,6 +97,7 @@ def cmd_check(args):
 
 def cmd_build(args):
     flipper_board, target, build_dir = BOARDS[args.board]
+    _purge_stale_sdkconfig(target, build_dir)
     common = f"-B {build_dir} -DFLIPPER_BOARD={flipper_board}"
     esp_idf_dir = get_esp_idf_dir()
     # FLIPPER_BOARD must also be in the env: fam_config.py reads it via
