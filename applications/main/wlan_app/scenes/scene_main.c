@@ -10,7 +10,8 @@ enum MainIndex {
     MainIndexChannelDeauth = 11,
     MainIndexChannelSniffer = 12,
     MainIndexChannelSsidSpam = 13,
-    MainIndexChannelEvilPortal = 14,
+    MainIndexChannelSmartDeauth = 14,
+    MainIndexChannelEvilPortal = 15,
     MainIndexUpdateSd = 15,
 };
 
@@ -63,6 +64,9 @@ void wlan_app_scene_main_on_enter(void* context) {
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "SSID Spam", MainIndexChannelSsidSpam,
+        wlan_app_scene_main_submenu_cb, app);
+    submenu_add_item(
+        app->submenu, "Smart Deauth", MainIndexChannelSmartDeauth,
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Evil Portal", MainIndexChannelEvilPortal,
@@ -130,6 +134,10 @@ bool wlan_app_scene_main_on_event(void* context, SceneManagerEvent event) {
         case MainIndexChannelSsidSpam:
             // SSID Spam ist target-unabhängig (reine Beacon-Frames) → kein channel_mode.
             scene_manager_next_scene(app->scene_manager, WlanAppSceneSsidSpam);
+            consumed = true;
+            break;
+        case MainIndexChannelSmartDeauth:
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneSmartDeauth);
             consumed = true;
             break;
         case MainIndexChannelEvilPortal:
