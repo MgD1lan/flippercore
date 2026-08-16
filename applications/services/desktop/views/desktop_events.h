@@ -41,6 +41,7 @@ typedef enum {
     DesktopLockMenuEventUsbStorage,
     DesktopLockMenuEventBluetoothToggle,
     DesktopLockMenuEventMeshClients,
+    DesktopLockMenuEventWebFs,
 
     DesktopMeshClientsEventPair,
     DesktopMeshClientsEventRemove,

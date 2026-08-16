@@ -230,9 +230,23 @@ static void wlan_app_free(WlanApp* app) {
 }
 
 int32_t wlan_app(void* args) {
-    UNUSED(args);
     WlanApp* app = wlan_app_alloc();
-    scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
+
+    // Launch arg "webfs" (e.g. from the desktop lock menu) opens the
+    // Web-Filesystem flow directly: info scene if already connected, else the
+    // Select Wifi / Dedicated AP menu.
+    const char* arg = args;
+    if(arg && strcmp(arg, "webfs") == 0) {
+        if(wlan_hal_is_connected()) {
+            scene_manager_set_scene_state(app->scene_manager, WlanAppSceneWebFsInfo, 0 /* STA */);
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsInfo);
+        } else {
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsMenu);
+        }
+    } else {
+        scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
+    }
+
     view_dispatcher_run(app->view_dispatcher);
     wlan_app_free(app);
     return 0;

@@ -91,6 +91,10 @@ static StaticTask_t s_worker_buf;
 static void wlan_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     UNUSED(arg);
     if(event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t* d = (wifi_event_sta_disconnected_t*)event_data;
+        if(d) {
+            ESP_LOGW(TAG, "STA disconnected: reason=%u (ssid_len=%u)", (unsigned)d->reason, (unsigned)d->ssid_len);
+        }
         s_wifi_connected = false;
         s_own_ip = 0;
         s_own_netmask = 0;

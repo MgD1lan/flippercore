@@ -17,6 +17,7 @@
 #include "wlan_mitm_payloads.h"
 #include "wlan_evil_portal_templates.h"
 #include "wlan_sd_update.h"
+#include "wlan_webfs.h"
 #include "views/wlan_lan_view.h"
 #include "views/wlan_connect_view.h"
 #include "views/wlan_portscan_view.h"
@@ -249,6 +250,12 @@ struct WlanApp {
     bool update_sd_flow;
     WlanSdUpdate* sd_update;
     View* view_sd_update;
+
+    // Web-Filesystem: like update_sd_flow, but routes to the Web-FS info scene
+    // after a successful connect. webfs_ssid/pw hold the Dedicated-AP config.
+    bool webfs_flow;
+    char webfs_ssid[WLAN_WEBFS_SSID_MAX + 1];
+    char webfs_pw[WLAN_WEBFS_PW_MAX + 1];
 };
 
 /** Schlüssel der aktuellen Picker-Assoziation: Channel-Key im Channel-Mode,

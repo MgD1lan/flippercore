@@ -123,7 +123,12 @@ bool wlan_app_scene_ssid_connect_on_event(void* context, SceneManagerEvent event
             app->connected = true;
             app->target_selected = false;
             app->lan_scan_complete = false;
-            if(app->update_sd_flow) {
+            if(app->webfs_flow) {
+                // Web-Filesystem over STA: serve on the fresh connection.
+                scene_manager_set_scene_state(
+                    app->scene_manager, WlanAppSceneWebFsInfo, 0 /* STA */);
+                scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsInfo);
+            } else if(app->update_sd_flow) {
                 // Update-SD-Flow braucht keinen ARP-Scan → direkt zur
                 // Bestätigung/Download-Scene.
                 scene_manager_next_scene(app->scene_manager, WlanAppSceneUpdateSd);

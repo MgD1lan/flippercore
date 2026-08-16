@@ -95,6 +95,12 @@ bool desktop_scene_lock_menu_on_event(void* context, SceneManagerEvent event) {
             consumed = true;
             break;
 
+        case DesktopLockMenuEventWebFs:
+            /* Web-Filesystem lives in the WiFi app; launch it into that flow. */
+            loader_start_detached_with_gui_error(desktop->loader, "wlan", "webfs");
+            consumed = true;
+            break;
+
         default:
             break;
         }

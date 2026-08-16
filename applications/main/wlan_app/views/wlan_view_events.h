@@ -64,4 +64,11 @@ typedef enum {
     WlanAppCustomEventSmartDeauthToggle = 210,
 
     WlanAppCustomEventAirSnitchProbeDone = 220,
+
+    WlanAppCustomEventWebFsSelectWifi = 230,
+    WlanAppCustomEventWebFsDedicatedAp = 231,
+    WlanAppCustomEventWebFsApSsid = 232,
+    WlanAppCustomEventWebFsApPassword = 233,
+    WlanAppCustomEventWebFsApStart = 234,
+    WlanAppCustomEventWebFsInputDone = 235,
 } WlanAppCustomEvent;

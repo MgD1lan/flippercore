@@ -5,7 +5,7 @@
 #include "../desktop_i.h"
 #include "desktop_view_lock_menu.h"
 
-#define LOCK_MENU_MAX_ITEMS 6
+#define LOCK_MENU_MAX_ITEMS 7
 
 // Menu items and events are built dynamically from the current toggle states:
 //   qFlipper       Enable/Disable (background RPC bridge)   [USB-OTG only]
@@ -51,6 +51,10 @@ static void lock_menu_build_items(bool usb_available, bool qflipper_on, bool bt_
     /* Mesh: der T-Embed ist immer Master — kein Mode-Toggle, "Mesh Clients"
      * (Discovery/Pair) ist immer verfügbar. */
     s_items[s_item_count++] = (LockMenuItem){"Mesh Clients", DesktopLockMenuEventMeshClients};
+
+    /* Web-Filesystem: SoftAP + HTTP file server for the SD; board-independent
+     * (WiFi is on every target). */
+    s_items[s_item_count++] = (LockMenuItem){"Web-Filesystem", DesktopLockMenuEventWebFs};
 }
 
 void desktop_lock_menu_set_callback(
