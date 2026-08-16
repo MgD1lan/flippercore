@@ -35,6 +35,7 @@
 #define WLAN_APP_SSID_MAX 33
 #define WLAN_APP_PASSWORD_MAX 65
 #define WLAN_APP_HOSTNAME_MAX 32
+#define WLAN_AIRSNITCH_MAX_PEERS 48
 
 typedef enum {
     WlanAppViewSubmenu,
@@ -75,6 +76,15 @@ typedef struct {
     uint16_t throttle_kbps; // 0 = aus
     bool sniff_monitor;     // ARP-MITM + transparenter Forward (Live Creds); exklusiv mit block
 } WlanDeviceRecord;
+
+// AirSnitch: ein vom Gastnetz aus erreichbares Gerät (Client-Isolation-Bypass).
+// mac ist nur für same_subnet-Peers (L2/ARP) bekannt, sonst 0.
+typedef struct {
+    uint32_t ip;            // Network-Byte-Order
+    uint8_t mac[6];         // 0 wenn Fremd-Subnetz (L3)
+    char hostname[WLAN_APP_HOSTNAME_MAX];
+    bool same_subnet;       // true = eigenes Gast-/24 (L2), false = Fremd-Subnetz (L3)
+} WlanAirsnitchPeer;
 
 #define WLAN_APP_MAX_DEAUTH_CLIENTS 16
 
@@ -194,6 +204,11 @@ struct WlanApp {
     bool lan_popup_active;        // true wenn LAN-Scene gerade einen Popup overlayt
     bool lan_scan_complete;       // true wenn ARP-Scan einmal durchgelaufen ist
     bool lan_force_rescan;        // true → SD-Cache überspringen, echten ARP-Scan erzwingen
+
+    // AirSnitch (Client-Isolation-Test vom Gastnetz aus)
+    char airsnitch_target_ssid[WLAN_APP_SSID_MAX]; // reines Label des gewählten Zielnetzes
+    WlanAirsnitchPeer airsnitch_peers[WLAN_AIRSNITCH_MAX_PEERS];
+    uint8_t airsnitch_peer_count;
 
     // Deauther-/Sniffer-Picker-Scene-State (shared)
     WlanDeauthClient deauth_clients[WLAN_APP_MAX_DEAUTH_CLIENTS];

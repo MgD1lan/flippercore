@@ -5,6 +5,7 @@ enum NetworkActionsIndex {
     NaIndexDeauth,
     NaIndexSniffer,
     NaIndexEvilPortal,
+    NaIndexAirSnitch,
 };
 
 static void network_actions_submenu_cb(void* context, uint32_t index) {
@@ -31,6 +32,11 @@ void wlan_app_scene_network_actions_on_enter(void* context) {
     submenu_add_item(app->submenu, "Deauth", NaIndexDeauth, network_actions_submenu_cb, app);
     submenu_add_item(app->submenu, "Package Sniffer", NaIndexSniffer, network_actions_submenu_cb, app);
     submenu_add_item(app->submenu, "Evil Portal", NaIndexEvilPortal, network_actions_submenu_cb, app);
+    // AirSnitch braucht eine aktive STA-Verbindung (Probe vom Gastnetz aus) →
+    // nur anzeigen, wenn verbunden.
+    if(app->connected) {
+        submenu_add_item(app->submenu, "AirSnitch", NaIndexAirSnitch, network_actions_submenu_cb, app);
+    }
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewSubmenu);
 }
@@ -74,6 +80,10 @@ bool wlan_app_scene_network_actions_on_event(void* context, SceneManagerEvent ev
             consumed = true;
             break;
         }
+        case NaIndexAirSnitch:
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneAirSnitchScan);
+            consumed = true;
+            break;
         }
     }
 
