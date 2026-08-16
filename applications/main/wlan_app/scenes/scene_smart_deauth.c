@@ -108,6 +108,15 @@ static void sd_scan_channels(void) {
     ESP_LOGI(TAG, "scan: %u active channels found", (unsigned)sd_active_count);
 }
 
+static void sd_button_cb(GuiButtonType result, InputType type, void* context) {
+    WlanApp* app = context;
+    if(type == InputTypeShort &&
+       (result == GuiButtonTypeLeft || result == GuiButtonTypeRight)) {
+        view_dispatcher_send_custom_event(
+            app->view_dispatcher, WlanAppCustomEventSmartDeauthToggle);
+    }
+}
+
 static void sd_update_widget(WlanApp* app) {
     Widget* w = app->widget;
     widget_reset(w);
@@ -136,9 +145,9 @@ static void sd_update_widget(WlanApp* app) {
     widget_add_string_element(w, 64, 46, AlignCenter, AlignTop, FontSecondary, buf);
 
     widget_add_button_element(
-        w, sd_running ? WidgetButtonLeft : WidgetButtonRight,
+        w, sd_running ? GuiButtonTypeLeft : GuiButtonTypeRight,
         sd_running ? "Stop" : "Start",
-        app->scene_manager, WlanAppCustomEventSmartDeauthToggle);
+        sd_button_cb, app);
 }
 
 void wlan_app_scene_smart_deauth_on_enter(void* context) {
