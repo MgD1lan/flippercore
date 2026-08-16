@@ -12,7 +12,7 @@ enum MainIndex {
     MainIndexChannelSsidSpam = 13,
     MainIndexChannelSmartDeauth = 14,
     MainIndexChannelEvilPortal = 15,
-    MainIndexUpdateSd = 15,
+    MainIndexUpdateSd = 16,
 };
 
 static void wlan_app_scene_main_submenu_cb(void* context, uint32_t index) {
