@@ -3,7 +3,7 @@
 # Build a Flipper Application Package (.fap) for ESP32 targets.
 # Builds for ALL supported targets automatically.
 #
-# Usage: ./tools/fap_build.sh <app_directory>
+# Usage: ./buildFap.sh <app_directory>
 #
 # Output: build_<board>/fap/<app_name>.fap for each target
 #
