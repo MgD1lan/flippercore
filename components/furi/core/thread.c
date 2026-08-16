@@ -204,23 +204,20 @@ void furi_thread_scrub(void) {
     }
 }
 
-/* Task stacks must live in internal RAM: an NVS/flash write suspends the whole
-   cache (flash *and* PSRAM), so any stack spill from a PSRAM-resident stack in
-   that window faults inside the exception handler → DoubleException → TG1WDT
-   reset with no panic output. Fall back to PSRAM only if internal RAM is
-   exhausted, and shout about it so the next such crash is traceable. */
+/* Historically task stacks HAD to live in internal RAM: an NVS/flash write
+   suspends the whole cache (flash *and* PSRAM), so a stack spill from a
+   PSRAM-resident stack in that window faulted → DoubleException → TG1WDT reset.
+   EXPERIMENT: with CONFIG_SPI_FLASH_AUTO_SUSPEND enabled the flash write is
+   suspended on a cache miss instead of blanking the cache, which should make
+   PSRAM stacks safe even across flash writes. We therefore prefer PSRAM to free
+   the very scarce internal DRAM, falling back to internal if PSRAM is full.
+   Revert this (internal-first) if flash-write crashes reappear. */
 static StackType_t* furi_thread_alloc_stack(const char* name, uint32_t stack_size) {
-    StackType_t* buffer = heap_caps_malloc(stack_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    StackType_t* buffer = heap_caps_malloc(stack_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if(!buffer) {
-        buffer = heap_caps_malloc(stack_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        FURI_LOG_E(
-            TAG,
-            "Stack for '%s' (%lu B) fell back to PSRAM — internal heap exhausted (%u B free, "
-            "largest block %u B). This thread will crash if it writes to flash/NVS.",
-            name ? name : "?",
-            (unsigned long)stack_size,
-            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        buffer = heap_caps_malloc(stack_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        FURI_LOG_W(TAG, "Stack for '%s' (%lu B) in internal RAM (PSRAM full)",
+            name ? name : "?", (unsigned long)stack_size);
     }
     return buffer;
 }

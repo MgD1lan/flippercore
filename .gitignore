@@ -28,3 +28,4 @@ managed_components/
 releases/*.zip
 *-backup-*
 *.backup-*
+/tmp/
