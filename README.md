@@ -39,7 +39,7 @@ The easiest way is the **web flasher** — no toolchain required, just a Chrome/
 
 **[Flash via Browser](https://sor3nt.github.io/interface.html)**
 
-Connect your board, click flash, done. After flashing, copy the contents of [sdcard.zip](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port/releases/download/v1.1.5/sdcard.zip) onto a FAT32 SD card and insert it — most apps need files there to function.
+Connect your board, click flash, done. After flashing, copy the contents of [sdcard.zip](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port/releases/download/v1.1.6/sdcard.zip) onto a FAT32 SD card and insert it — most apps need files there to function.
 
 ## Apps
 
