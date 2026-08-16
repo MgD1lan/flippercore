@@ -71,4 +71,5 @@ typedef enum {
     WlanAppCustomEventWebFsApPassword = 233,
     WlanAppCustomEventWebFsApStart = 234,
     WlanAppCustomEventWebFsInputDone = 235,
+    WlanAppCustomEventWebFsStop = 236,
 } WlanAppCustomEvent;

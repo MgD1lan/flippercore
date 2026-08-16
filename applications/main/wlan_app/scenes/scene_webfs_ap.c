@@ -1,6 +1,7 @@
-/* Dedicated-AP settings: SSID / Password (TextInput) + Start Filesystem.
- * Values live in app->webfs_ssid/pw (loaded from /ext/webfs/config.txt on first
- * enter); Start hands over to the info scene in AP mode. */
+/* Dedicated-AP settings (VariableItemList, like the Evil Portal menu):
+ * SSID / Password rows show their value on the right and open a TextInput on OK;
+ * "Start Filesystem" hands over to the info scene in AP mode. Values live in
+ * app->webfs_ssid/pw (loaded from /ext/webfs/config.txt on first enter). */
 
 #include "../wlan_app.h"
 
@@ -10,7 +11,7 @@ enum {
     WebFsApItemStart,
 };
 
-static void webfs_ap_submenu_cb(void* context, uint32_t index) {
+static void webfs_ap_enter_cb(void* context, uint32_t index) {
     WlanApp* app = context;
     uint32_t ev;
     switch(index) {
@@ -33,19 +34,24 @@ void wlan_app_scene_webfs_ap_on_enter(void* context) {
         wlan_webfs_config_load(app->webfs_ssid, app->webfs_pw);
     }
 
-    submenu_reset(app->submenu);
-    submenu_set_header_centered(app->submenu, "Dedicated AP");
+    VariableItemList* vil = app->variable_item_list;
+    variable_item_list_reset(vil);
 
-    char line[80];
-    snprintf(line, sizeof(line), "SSID: %s", app->webfs_ssid);
-    submenu_add_item(app->submenu, line, WebFsApItemSsid, webfs_ap_submenu_cb, app);
-    snprintf(line, sizeof(line), "Password: %s", app->webfs_pw[0] ? app->webfs_pw : "(open)");
-    submenu_add_item(app->submenu, line, WebFsApItemPassword, webfs_ap_submenu_cb, app);
-    submenu_add_item(app->submenu, "Start Filesystem", WebFsApItemStart, webfs_ap_submenu_cb, app);
+    VariableItem* item;
+    item = variable_item_list_add(vil, "SSID", 1, NULL, app);
+    variable_item_set_current_value_text(item, app->webfs_ssid);
 
-    submenu_set_selected_item(
-        app->submenu, scene_manager_get_scene_state(app->scene_manager, WlanAppSceneWebFsAp));
-    view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewSubmenu);
+    item = variable_item_list_add(vil, "Password", 1, NULL, app);
+    variable_item_set_current_value_text(item, app->webfs_pw[0] ? app->webfs_pw : "(open)");
+
+    variable_item_list_add(vil, "Start Filesystem", 1, NULL, app);
+
+    variable_item_list_set_enter_callback(vil, webfs_ap_enter_cb, app);
+    variable_item_list_set_selected_item(
+        vil,
+        (uint8_t)scene_manager_get_scene_state(app->scene_manager, WlanAppSceneWebFsAp));
+
+    view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewVariableItemList);
 }
 
 bool wlan_app_scene_webfs_ap_on_event(void* context, SceneManagerEvent event) {
@@ -76,5 +82,5 @@ bool wlan_app_scene_webfs_ap_on_event(void* context, SceneManagerEvent event) {
 
 void wlan_app_scene_webfs_ap_on_exit(void* context) {
     WlanApp* app = context;
-    submenu_reset(app->submenu);
+    variable_item_list_reset(app->variable_item_list);
 }
