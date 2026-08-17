@@ -56,6 +56,8 @@ void power_trigger_ui_update(LoaderMenuPower* power);
 
 #define TAG "LoaderMenu"
 
+#define LOADER_MENU_STACK_SIZE (8192)
+
 #define LOADER_MENU_MAX_ENTRIES (96)
 #define LOADER_MENU_MAX_FAPS MENU_CUSTOM_MAX_ITEMS
 
@@ -81,7 +83,7 @@ LoaderMenu* loader_menu_alloc(void (*closed_cb)(void*), void* context) {
     loader_menu->context = context;
     loader_menu->settings_first = false;
     loader_menu->thread =
-        furi_thread_alloc_ex(TAG, 4096, loader_menu_thread, loader_menu);
+        furi_thread_alloc_ex(TAG, LOADER_MENU_STACK_SIZE, loader_menu_thread, loader_menu);
     furi_thread_start(loader_menu->thread);
     return loader_menu;
 }
@@ -92,7 +94,7 @@ LoaderMenu* loader_menu_alloc_settings_first(void (*closed_cb)(void*), void* con
     loader_menu->context = context;
     loader_menu->settings_first = true;
     loader_menu->thread =
-        furi_thread_alloc_ex(TAG, 4096, loader_menu_thread, loader_menu);
+        furi_thread_alloc_ex(TAG, LOADER_MENU_STACK_SIZE, loader_menu_thread, loader_menu);
     furi_thread_start(loader_menu->thread);
     return loader_menu;
 }
