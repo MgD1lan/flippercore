@@ -5,8 +5,6 @@
 #include <stdint.h>
 
 #include <esp_mac.h>
-#include <nvs_flash.h>
-#include <nvs.h>
 
 /* -------------------------------------------------------------------------
  * eFuse-derived device identity
@@ -50,12 +48,11 @@ typedef struct {
     uint8_t uid[6];
 } FuriHalVersionState;
 
-/* NVS key holding the user-spoofed device name (survives reboots regardless
- * of SD-card presence; the SD copy in /ext/dolphin/name.settings is kept for
- * compatibility with the stock namechanger service). */
-#define FURI_HAL_VERSION_NVS_NAMESPACE "furi_hal"
-#define FURI_HAL_VERSION_NVS_KEY       "dev_name"
-#define FURI_HAL_VERSION_NVS_COLOR_KEY "shell_color"
+/* Persistence lives entirely on the SD card (/ext/dolphin/name.settings, via
+ * the namechanger service). NVS is intentionally NOT used: an nvs_commit()
+ * suspends the whole flash cache, and with task stacks placed PSRAM-first any
+ * stack spill during that window double-faults into a TG1WDT reset with no
+ * panic output. See memory project_psram_stack_nvs_doubleexception. */
 
 static FuriHalVersionState furi_hal_version = {
     .name = "ESP32",
@@ -66,43 +63,6 @@ static FuriHalVersionState furi_hal_version = {
 };
 
 static FuriHalVersionColor furi_hal_version_shell_color = FuriHalVersionColorUnknown;
-
-static void furi_hal_version_nvs_load(char* out, size_t out_size) {
-    nvs_handle_t handle;
-    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) return;
-    size_t len = out_size;
-    if(nvs_get_str(handle, FURI_HAL_VERSION_NVS_KEY, out, &len) != ESP_OK) {
-        out[0] = '\0';
-    }
-    nvs_close(handle);
-}
-
-static void furi_hal_version_nvs_store(const char* name) {
-    nvs_handle_t handle;
-    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
-    nvs_set_str(handle, FURI_HAL_VERSION_NVS_KEY, name);
-    nvs_commit(handle);
-    nvs_close(handle);
-}
-
-static void furi_hal_version_nvs_color_load(void) {
-    nvs_handle_t handle;
-    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) return;
-    uint8_t value = FuriHalVersionColorUnknown;
-    nvs_get_u8(handle, FURI_HAL_VERSION_NVS_COLOR_KEY, &value);
-    nvs_close(handle);
-    if(value <= FuriHalVersionColorTransparent) {
-        furi_hal_version_shell_color = (FuriHalVersionColor)value;
-    }
-}
-
-static void furi_hal_version_nvs_color_store(void) {
-    nvs_handle_t handle;
-    if(nvs_open(FURI_HAL_VERSION_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
-    nvs_set_u8(handle, FURI_HAL_VERSION_NVS_COLOR_KEY, (uint8_t)furi_hal_version_shell_color);
-    nvs_commit(handle);
-    nvs_close(handle);
-}
 
 /* Refresh the BLE advertisement service UUID so qFlipper mobile picks up the
  * new shell color while scanning (no reconnect needed). Declared via extern to
@@ -135,19 +95,16 @@ void furi_hal_version_init(void) {
     esp_efuse_mac_get_default(furi_hal_version.uid);
     memcpy(furi_hal_version.ble_mac, furi_hal_version.uid, sizeof(furi_hal_version.uid));
 
-    /* Effective name precedence:
-     *   1. NVS user-spoofed name (set via Spoofing Options),
-     *   2. custom name loaded by namechanger (SD /ext/dolphin/name.settings),
-     *   3. stable name derived from the eFuse MAC. */
-    char nvs_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH] = {0};
-    furi_hal_version_nvs_load(nvs_name, sizeof(nvs_name));
-    furi_hal_version_nvs_color_load();
-
+    /* Effective name precedence (no NVS — see the note at the top of the file):
+     *   1. custom name loaded by namechanger (SD /ext/dolphin/name.settings),
+     *   2. stable name derived from the eFuse MAC.
+     * The shell color stays at its default here and is applied later by the
+     * namechanger service once the SD card is up. This runs very early in boot
+     * (before storage), so the SD copy cannot be read yet — namechanger calls
+     * furi_hal_version_set_name()/set_hw_color() once records are available. */
     const char* custom = version_get_custom_name(NULL);
     const char* effective;
-    if(nvs_name[0]) {
-        effective = nvs_name;
-    } else if(custom && custom[0]) {
+    if(custom && custom[0]) {
         effective = custom;
     } else {
         effective = s_device_name_pool[derive_name_index(furi_hal_version.uid)];
@@ -220,7 +177,7 @@ void furi_hal_version_set_hw_color(FuriHalVersionColor color) {
         color = FuriHalVersionColorUnknown;
     }
     furi_hal_version_shell_color = color;
-    furi_hal_version_nvs_color_store();
+    /* RAM + BLE only — persistence goes to SD (namechanger), never NVS. */
     furi_hal_version_refresh_ble_advertisement();
 }
 
@@ -265,14 +222,14 @@ const char* furi_hal_version_get_ble_local_device_name_ptr(void) {
 }
 
 void furi_hal_version_set_name(const char* name) {
-    /* Accept NULL or empty string — fall back to the eFuse-derived name. */
+    /* RAM only — persistence is the caller's job (SD via namechanger). Must NOT
+     * touch NVS: this runs on GUI/app threads whose stacks live in PSRAM, and
+     * an nvs_commit() there double-faults (see the note above). */
     if(name && name[0]) {
         furi_hal_version_refresh_names(name);
-        furi_hal_version_nvs_store(furi_hal_version.name);
     } else {
         const char* derived = s_device_name_pool[derive_name_index(furi_hal_version.uid)];
         furi_hal_version_refresh_names(derived);
-        furi_hal_version_nvs_store(furi_hal_version.name);
     }
 }
 

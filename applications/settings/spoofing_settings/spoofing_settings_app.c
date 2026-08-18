@@ -60,28 +60,45 @@ void spoofing_settings_app_free(SpoofingSettingsApp* app) {
     furi_assert(app);
 
     bool save_name = app->save_name;
+    bool save_color = app->save_color;
+    /* Reboot only after a successful NAME persist — a color-only change is
+     * already live (RAM+BLE) and just needs to reach the SD for next boot. */
     bool name_saved = false;
 
-    if(save_name) {
+    if(save_name || save_color) {
         Storage* storage = furi_record_open(RECORD_STORAGE);
-        if(app->device_name[0] == '\0') {
+
+        if(save_name && app->device_name[0] == '\0') {
+            /* Empty name = reset to factory defaults (name + color): drop the
+             * settings file so the next boot derives everything fresh. */
             name_saved = storage_simply_remove(storage, NAMECHANGER_PATH);
         } else {
+            /* When only the color changed, keep the current effective name. */
+            const char* name = (save_name && app->device_name[0]) ?
+                                    app->device_name :
+                                    furi_hal_version_get_name_ptr();
+
             /* NAMECHANGER_PATH = /ext/dolphin/name.settings — the dolphin dir is
-             * not created anywhere on this port, so create it before writing. */
+             * not created anywhere on this port, so create it before writing.
+             * Persistence lives on the SD, never NVS (an nvs_commit() on a
+             * PSRAM-stacked app thread double-faults into a TG1WDT reset). */
             if(storage_simply_mkdir(storage, EXT_PATH("dolphin"))) {
                 FlipperFormat* file = flipper_format_file_alloc(storage);
 
+                bool ok = false;
                 do {
                     if(!flipper_format_file_open_always(file, NAMECHANGER_PATH)) break;
                     if(!flipper_format_write_header_cstr(
                            file, NAMECHANGER_HEADER, NAMECHANGER_VERSION))
                         break;
-                    if(!flipper_format_write_string_cstr(file, "Name", app->device_name)) break;
-                    name_saved = true;
+                    if(!flipper_format_write_string_cstr(file, "Name", name)) break;
+                    uint32_t color = (uint32_t)furi_hal_version_get_hw_color();
+                    if(!flipper_format_write_uint32(file, "Color", &color, 1)) break;
+                    ok = true;
                 } while(0);
 
                 flipper_format_free(file);
+                if(save_name) name_saved = ok;
             }
         }
         furi_record_close(RECORD_STORAGE);

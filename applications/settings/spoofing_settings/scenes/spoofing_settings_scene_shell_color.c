@@ -31,7 +31,9 @@ static void spoofing_settings_scene_shell_color_changed(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
 
     variable_item_set_current_value_text(item, shell_color_text[index]);
+    /* Live RAM+BLE update; persisted to SD on app exit (see app_free). */
     furi_hal_version_set_hw_color(shell_color_value[index]);
+    app->save_color = true;
 }
 
 void spoofing_settings_scene_shell_color_on_enter(void* context) {

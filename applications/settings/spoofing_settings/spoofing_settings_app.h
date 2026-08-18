@@ -27,5 +27,6 @@ typedef struct {
     Popup* popup;
 
     bool save_name;
+    bool save_color;
     char device_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
 } SpoofingSettingsApp;

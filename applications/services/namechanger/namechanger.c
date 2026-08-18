@@ -56,9 +56,20 @@ static bool namechanger_init() {
 
         if(chars_check_failed) break;
 
-        // If all checks was good we can set the name
-        version_set_custom_name(NULL, strdup(furi_string_get_cstr(str)));
-        furi_hal_version_set_name(version_get_custom_name(NULL));
+        // If all checks was good we can set the name.
+        // NB: call furi_hal_version_set_name() directly with the string — it
+        // copies the name into all live fields AND updates the Version custom
+        // name via refresh_names(). Going through version_set_custom_name(NULL,
+        // …) is a no-op (it early-returns on a NULL Version*), which used to
+        // leave the name at the eFuse-derived default.
+        furi_hal_version_set_name(furi_string_get_cstr(str));
+
+        /* Optional shell color (added when NVS persistence moved to SD). Older
+         * files without the field simply keep the default color. */
+        uint32_t color;
+        if(flipper_format_read_uint32(file, "Color", &color, 1)) {
+            furi_hal_version_set_hw_color((FuriHalVersionColor)color);
+        }
 
         res = true;
     } while(false);
