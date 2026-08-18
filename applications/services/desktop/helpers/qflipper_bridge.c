@@ -8,10 +8,22 @@
  *
  * Installing the TinyUSB composite switches the ESP32-S3 internal USB PHY from
  * USB-Serial-JTAG to USB-OTG, which kills the serial/JTAG bridge esptool uses
- * for flashing. So we only do it on demand. stop() leaves the composite
- * installed (like USB-Storage) and only detaches the RPC bridge — this
- * esp_tinyusb build can't cleanly reinstall after an uninstall, so the
- * composite stays up until reboot.
+ * for flashing. So we only do it on demand.
+ *
+ * stop() here only detaches the RPC bridge (CDC callbacks off, session closed)
+ * and deliberately LEAVES the composite installed — it is also the mutual-
+ * exclusion hook the USB-Storage scene calls before taking the composite over
+ * for MSC, and tearing it down there would just churn (uninstall + reinstall).
+ * The *user-facing* "Disable qFlipper" path (lock menu) calls stop() AND then
+ * furi_hal_usb_composite_uninstall(), which fully tears the composite down and
+ * routes the internal PHY back to USB-Serial-JTAG — so JTAG returns live, no
+ * reboot. That uninstall is now a clean, symmetric teardown (frees the
+ * esp_tinyusb CDC-ACM wrapper), so re-enabling qFlipper reinstalls cleanly.
+ *
+ * The PHY mux also lives in the RTC always-on domain and survives a soft reset,
+ * so as a safety net furi_hal_usb_init() forces the mux back to USJ at every
+ * boot — even a crash/watchdog reboot with the composite still up recovers the
+ * flash/console port without a BOOT+RESET.
  */
 
 #include "qflipper_bridge.h"
@@ -363,12 +375,11 @@ void qflipper_bridge_stop(void) {
     furi_thread_join(srv->thread);
     furi_thread_free(srv->thread);
 
-    /* Detach the RPC bridge but LEAVE the composite installed — exactly like
-     * USB-Storage, which only toggles its MSC function. The esp_tinyusb build
-     * here can't cleanly reinstall after furi_hal_usb_composite_uninstall()
-     * (tusb_teardown is a no-op), so uninstalling here would break the next
-     * Enable. The composite stays up until reboot; re-enabling just reattaches
-     * the CDC callbacks. */
+    /* Detach the RPC bridge only and LEAVE the composite installed. This is the
+     * shared mutual-exclusion hook (USB-Storage calls it before reusing the
+     * composite for MSC), so tearing the composite down HERE would churn it.
+     * The user-facing "Disable qFlipper" path uninstalls the composite right
+     * after this (see the file header) to route the PHY back to USJ. */
     furi_hal_cdc_set_callbacks(USB_RPC_CDC_ITF, NULL, NULL);
     usb_rpc_session_close(srv);
     furi_record_close(RECORD_RPC);

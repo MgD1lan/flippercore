@@ -92,6 +92,10 @@ static void desktop_usb_storage_leave(Desktop* desktop) {
         }
         s_sd_was_mounted = false;
     }
+
+    /* Tear the shared composite down so the internal USB PHY routes back to
+     * USB-Serial-JTAG — same "leave -> flash" restore as the qFlipper toggle. */
+    furi_hal_usb_composite_uninstall();
 }
 #endif /* USB_STORAGE_HAVE_USB */
 

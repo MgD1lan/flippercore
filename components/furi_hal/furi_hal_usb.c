@@ -1,5 +1,6 @@
 #include "furi_hal_usb.h"
 #include "furi_hal_usb_hid_backend.h"
+#include "furi_hal_usb_tinyusb_composite.h"
 
 #include <stddef.h>
 
@@ -17,6 +18,14 @@ FuriHalUsbInterface usb_ccid = {.name = "ccid"};
 void furi_hal_usb_init(void) {
     furi_hal_usb_current = NULL;
     furi_hal_usb_locked = false;
+
+    /* The internal USB PHY mux is an RTC-domain setting that survives a soft
+     * reset. If a prior boot's on-demand composite (qFlipper / USB-Storage)
+     * left it routed to the OTG controller, a normal reboot would keep
+     * USB-Serial-JTAG disconnected and esptool couldn't flash without the
+     * manual BOOT+RESET dance. Force the mux back to USJ here at boot; the
+     * on-demand composite installs re-route to OTG when actually needed. */
+    furi_hal_usb_composite_restore_serial_jtag();
 }
 
 bool furi_hal_usb_set_config(FuriHalUsbInterface* new_if, void* ctx) {

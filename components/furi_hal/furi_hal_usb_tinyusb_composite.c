@@ -231,10 +231,11 @@ bool furi_hal_usb_composite_install(
 bool furi_hal_usb_composite_uninstall(void) {
     if(!s_installed) return true;
 
-    /* 1) Tear down the TinyUSB stack: stops the device task, runs tusb_teardown
-     *    (a no-op in this esp_tinyusb build) and deletes the OTG PHY, which
-     *    disables the USB WRAP and drops the D+ pull-up — the host sees the
-     *    composite disconnect. */
+    /* 1) Tear down the TinyUSB stack: stops the device task, then tud_deinit()
+     *    (real in esp_tinyusb 1.7.x — resets the DWC2 core and drops the D+
+     *    pull-up so the host sees the composite disconnect) and deletes the OTG
+     *    PHY. Despite the long-standing "no-op teardown" lore, tusb.h defines
+     *    tusb_teardown() -> tusb_deinit(0) and it is compiled in this build. */
     esp_err_t err = tinyusb_driver_uninstall();
     if(err != ESP_OK) {
         FURI_LOG_E(TAG, "tinyusb_driver_uninstall failed: %d", err);
@@ -242,22 +243,37 @@ bool furi_hal_usb_composite_uninstall(void) {
          * left the OTG controller idle. */
     }
 
-    /* 2) Re-route the shared internal FSLS PHY from the OTG controller back to
-     *    the USB-Serial-JTAG controller and re-enable its pads. The USJ bus
-     *    clock has been running since boot (it was the console/flash port);
-     *    OTG install never touched it. Re-applying the USJ pull-up makes the
-     *    host re-enumerate the JTAG/serial device, so esptool can flash again.
-     *
-     *    usb_serial_jtag_ll_phy_enable_external(false) sets:
-     *      USB_SERIAL_JTAG.conf0.phy_sel = 0
-     *      RTCCNTL.usb_conf.sw_hw_usb_phy_sel = 1   (software mux control)
-     *      RTCCNTL.usb_conf.sw_usb_phy_sel   = 0   (internal PHY -> USJ) */
-    usb_serial_jtag_ll_phy_enable_external(false);
-    usb_serial_jtag_ll_phy_enable_pad(true);
+    /* 2) Free the esp_tinyusb CDC-ACM wrapper (cdc_obj). tinyusb_driver_uninstall
+     *    does NOT do this, and tusb_cdc_acm_init() refuses to re-init an
+     *    interface whose cdc_obj is still allocated (cdc_obj_check ->
+     *    ESP_ERR_INVALID_STATE). Skipping it is exactly what made a later
+     *    composite_install silently come up without a working CDC — the real
+     *    reason "reinstall doesn't work", not tusb_teardown. The tusb task is
+     *    already stopped above, so no USB event can touch the wrapper now. */
+    esp_err_t cdc_err = tusb_cdc_acm_deinit(TINYUSB_CDC_ACM_0);
+    if(cdc_err != ESP_OK) {
+        FURI_LOG_W(TAG, "tusb_cdc_acm_deinit failed: %d", cdc_err);
+    }
+
+    /* 3) Re-route the shared internal FSLS PHY from the OTG controller back to
+     *    the USB-Serial-JTAG controller and re-enable its pads, so the host
+     *    re-enumerates the JTAG/serial device and esptool can flash again. */
+    furi_hal_usb_composite_restore_serial_jtag();
 
     s_installed = false;
     FURI_LOG_I(TAG, "Composite uninstalled, USB-Serial-JTAG restored");
     return true;
+}
+
+void furi_hal_usb_composite_restore_serial_jtag(void) {
+    /* usb_serial_jtag_ll_phy_enable_external(false) sets:
+     *   USB_SERIAL_JTAG.conf0.phy_sel = 0
+     *   RTCCNTL.usb_conf.sw_hw_usb_phy_sel = 1   (software mux control)
+     *   RTCCNTL.usb_conf.sw_usb_phy_sel   = 0   (internal FSLS PHY -> USJ)
+     * These RTC-domain bits persist across a soft reset, so calling this at
+     * boot undoes a prior OTG-composite mux even after a plain reboot. */
+    usb_serial_jtag_ll_phy_enable_external(false);
+    usb_serial_jtag_ll_phy_enable_pad(true);
 }
 
 #else /* !ESP32-S3 / S2 */
@@ -280,6 +296,9 @@ bool furi_hal_usb_composite_is_installed(void) {
 
 bool furi_hal_usb_composite_uninstall(void) {
     return false;
+}
+
+void furi_hal_usb_composite_restore_serial_jtag(void) {
 }
 
 #endif
