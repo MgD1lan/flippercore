@@ -4,6 +4,7 @@
 #include <esp_private/wifi.h>
 #include <esp_netif.h>
 #include <esp_event.h>
+#include <esp_sntp.h>
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -73,6 +74,7 @@ typedef struct {
     volatile bool* result;
 } WlanCmd;
 
+static bool s_sntp_started = false;
 static bool s_started = false;
 static bool s_bt_was_on = false;
 static bool s_netif_inited = false;
@@ -106,6 +108,17 @@ static void wlan_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         s_own_ip = event->ip_info.ip.addr;
         s_own_netmask = event->ip_info.netmask.addr;
         s_wifi_connected = true;
+        // Sync the RTC via SNTP once we have an IP. Without a correct clock
+        // NTLMv2 (SMB) and anything else time-sensitive uses ~1970. UTC is
+        // fine for these uses. Harmless if the network has no internet (the
+        // SMB code also falls back to the server-supplied timestamp).
+        if(!s_sntp_started) {
+            esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+            esp_sntp_setservername(0, "pool.ntp.org");
+            esp_sntp_init();
+            s_sntp_started = true;
+            ESP_LOGI(TAG, "SNTP started (pool.ntp.org)");
+        }
     }
 }
 

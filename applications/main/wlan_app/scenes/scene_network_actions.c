@@ -5,6 +5,7 @@ enum NetworkActionsIndex {
     NaIndexDeauth,
     NaIndexSniffer,
     NaIndexEvilPortal,
+    NaIndexSmb,
     NaIndexAirSnitch,
 };
 
@@ -32,6 +33,10 @@ void wlan_app_scene_network_actions_on_enter(void* context) {
     submenu_add_item(app->submenu, "Deauth", NaIndexDeauth, network_actions_submenu_cb, app);
     submenu_add_item(app->submenu, "Package Sniffer", NaIndexSniffer, network_actions_submenu_cb, app);
     submenu_add_item(app->submenu, "Evil Portal", NaIndexEvilPortal, network_actions_submenu_cb, app);
+    // SMB Browser needs an active STA connection + the scanned device list.
+    if(app->connected) {
+        submenu_add_item(app->submenu, "SMB Browser", NaIndexSmb, network_actions_submenu_cb, app);
+    }
     // AirSnitch braucht eine aktive STA-Verbindung (Probe vom Gastnetz aus) →
     // nur anzeigen, wenn verbunden.
     if(app->connected) {
@@ -80,6 +85,10 @@ bool wlan_app_scene_network_actions_on_event(void* context, SceneManagerEvent ev
             consumed = true;
             break;
         }
+        case NaIndexSmb:
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneSmbScan);
+            consumed = true;
+            break;
         case NaIndexAirSnitch:
             scene_manager_next_scene(app->scene_manager, WlanAppSceneAirSnitchScan);
             consumed = true;

@@ -139,6 +139,16 @@ static WlanApp* wlan_app_alloc(void) {
     app->update_sd_flow = false;
     app->sd_update = wlan_sd_update_alloc();
 
+    // SMB Browser: lazily allocated on first use (allocates PSRAM buffers +
+    // a worker task), freed in wlan_app_free.
+    app->smb = NULL;
+    app->smb_server_ip[0] = '\0';
+    app->smb_server_name[0] = '\0';
+    app->smb_user[0] = '\0';
+    app->smb_pass[0] = '\0';
+    app->smb_share[0] = '\0';
+    app->smb_path[0] = '\0';
+
     app->text_buf = furi_string_alloc();
     app->netcut = wlan_netcut_alloc();
     /* TEMP: log heap right before the 15KB cred_sniff alloc that OOM-crashed. */
@@ -178,6 +188,10 @@ static void wlan_app_free(WlanApp* app) {
     if(app->sd_update) {
         wlan_sd_update_free(app->sd_update);
         app->sd_update = NULL;
+    }
+    if(app->smb) {
+        wlan_smb_free(app->smb);
+        app->smb = NULL;
     }
     wlan_hal_stop();
 

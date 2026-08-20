@@ -34,6 +34,15 @@ CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
 # every boot instead (a few ms, no RF quality loss).
 # CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set
 
+# Same class of bug as the PHY-cal store above: the WiFi NVS store issues
+# flash-writes at runtime that stall the shared flash/PSRAM MSPI cache. The SMB
+# browser runs long libsmb2 crypto (NTLMSSP) out of flash/PSRAM; a WiFi NVS
+# flash-write in that window panics it ("Cache disabled but cached memory region
+# accessed", crash in NTOWFv2). Disabling the WiFi NVS store removes the last
+# runtime flash-writer (app settings already go to SD via saved_struct). WiFi
+# still works; it just re-reads config each boot instead of caching it in NVS.
+# CONFIG_ESP_WIFI_NVS_ENABLED is not set
+
 # PSRAM: T-Embed CC1101 has 8MB PSRAM
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y

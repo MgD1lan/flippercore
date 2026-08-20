@@ -18,6 +18,7 @@
 #include "wlan_evil_portal_templates.h"
 #include "wlan_sd_update.h"
 #include "wlan_webfs.h"
+#include "wlan_smb.h"
 #include "views/wlan_lan_view.h"
 #include "views/wlan_connect_view.h"
 #include "views/wlan_portscan_view.h"
@@ -256,6 +257,21 @@ struct WlanApp {
     bool webfs_flow;
     char webfs_ssid[WLAN_WEBFS_SSID_MAX + 1];
     char webfs_pw[WLAN_WEBFS_PW_MAX + 1];
+
+    // SMB Browser (only shown when connected). smb is lazily allocated on
+    // first use and freed in wlan_app_free.
+    WlanSmb* smb;
+    char smb_server_ip[64];                 // selected server ("a.b.c.d")
+    char smb_server_name[WLAN_APP_HOSTNAME_MAX]; // NetBIOS/host label
+    char smb_user[WLAN_SMB_USER_MAX];
+    char smb_pass[WLAN_SMB_PASS_MAX];
+    char smb_share[WLAN_SMB_SHARE_MAX];     // current share, "" = share list level
+    char smb_path[WLAN_SMB_PATH_MAX];       // current path within the share
+    // Pending download target (set from the browser's long-OK menu).
+    char smb_dl_share[WLAN_SMB_SHARE_MAX];
+    char smb_dl_path[WLAN_SMB_PATH_MAX];
+    char smb_dl_name[WLAN_SMB_NAME_MAX];
+    bool smb_dl_is_dir;
 };
 
 /** Schlüssel der aktuellen Picker-Assoziation: Channel-Key im Channel-Mode,
