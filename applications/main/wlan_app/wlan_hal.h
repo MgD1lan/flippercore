@@ -32,6 +32,8 @@ void wlan_hal_disconnect(void);
 
 bool wlan_hal_is_connected(void);
 
+bool wlan_hal_last_fail_is_auth(void);
+
 /** Eigene IP nach erfolgreichem Connect (Network-Byte-Order). 0 wenn keine. */
 uint32_t wlan_hal_get_own_ip(void);
 

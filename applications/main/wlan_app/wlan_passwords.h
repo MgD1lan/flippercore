@@ -12,3 +12,5 @@ bool wlan_password_read(const char* ssid, char* out_pass, size_t max_len);
 
 /** Speichert/überschreibt /ext/wifi/<ssid>.txt mit dem Passwort. */
 bool wlan_password_save(const char* ssid, const char* password);
+
+bool wlan_password_delete(const char* ssid);

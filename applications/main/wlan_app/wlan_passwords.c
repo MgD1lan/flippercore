@@ -59,6 +59,19 @@ bool wlan_password_save(const char* ssid, const char* password) {
     return ok;
 }
 
+bool wlan_password_delete(const char* ssid) {
+    if(!ssid || !ssid[0]) return false;
+
+    char path[64];
+    build_password_path(ssid, path, sizeof(path));
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    bool ok = storage_simply_remove(storage, path);
+    furi_record_close(RECORD_STORAGE);
+
+    return ok;
+}
+
 bool wlan_password_read(const char* ssid, char* out_pass, size_t max_len) {
     if(!ssid || !ssid[0] || !out_pass || max_len == 0) return false;
 

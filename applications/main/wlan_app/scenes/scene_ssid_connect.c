@@ -139,8 +139,15 @@ bool wlan_app_scene_ssid_connect_on_event(void* context, SceneManagerEvent event
             }
             consumed = true;
         } else if(event.event == WlanAppCustomEventConnectFailed) {
-            // Bei Failed: gespeichertes Passwort verwerfen damit der User es erneut eingibt.
-            app->target_ap.has_password = false;
+
+            if(!app->target_ap.is_open && wlan_hal_last_fail_is_auth()) {
+                wlan_password_delete(app->target_ap.ssid);
+                app->target_ap.has_password = false;
+
+                if(app->ap_selected_index < app->ap_count) {
+                    app->ap_records[app->ap_selected_index].has_password = false;
+                }
+            }
             scene_manager_previous_scene(app->scene_manager);
             consumed = true;
         }
