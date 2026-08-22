@@ -17,6 +17,7 @@
 #include "wlan_mitm_payloads.h"
 #include "wlan_evil_portal_templates.h"
 #include "wlan_sd_update.h"
+#include "wlan_fw_update.h"
 #include "wlan_webfs.h"
 #include "wlan_smb.h"
 #include "views/wlan_lan_view.h"
@@ -30,6 +31,7 @@
 #include "views/wlan_evil_portal_captured_view.h"
 #include "views/wlan_live_creds_view.h"
 #include "views/wlan_sd_update_view.h"
+#include "views/wlan_fw_update_view.h"
 
 #define WLAN_APP_TAG "WlanApp"
 #define WLAN_APP_MAX_APS 64
@@ -57,6 +59,7 @@ typedef enum {
     WlanAppViewEvilPortalCaptured,
     WlanAppViewLiveCreds,
     WlanAppViewSdUpdate,
+    WlanAppViewFwUpdate,
 } WlanAppView;
 
 typedef struct {
@@ -245,14 +248,19 @@ struct WlanApp {
 
     WlanNetcut* netcut;
 
-    // Update-SD-Flow: true sobald der User "Update SD" gewählt hat; steuert,
-    // dass scene_ssid_connect nach erfolgreichem Connect zur Update-SD-Scene
-    // statt zum ARP-Scan springt. Wird in scene_update_sd konsumiert.
-    bool update_sd_flow;
+    // SD-Content-Update (Delta-Sync über files.txt). Worker + View werden von
+    // der kombinierten Update-Scene (scene_fw_update) als zweite Phase genutzt.
     WlanSdUpdate* sd_update;
     View* view_sd_update;
 
-    // Web-Filesystem: like update_sd_flow, but routes to the Web-FS info scene
+    // Kombiniertes Update (Firmware + SD): true sobald der User "Update" gewählt
+    // hat; scene_ssid_connect routet nach erfolgreichem Connect zur Update-Scene.
+    // Wird in scene_fw_update konsumiert.
+    bool fw_update_flow;
+    WlanFwUpdate* fw_update;
+    View* view_fw_update;
+
+    // Web-Filesystem: like fw_update_flow, but routes to the Web-FS info scene
     // after a successful connect. webfs_ssid/pw hold the Dedicated-AP config.
     bool webfs_flow;
     char webfs_ssid[WLAN_WEBFS_SSID_MAX + 1];

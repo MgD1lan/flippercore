@@ -75,4 +75,10 @@ typedef enum {
 
     WlanAppCustomEventSmbInputDone = 240,
     WlanAppCustomEventSmbRetry = 241,
+
+    WlanAppCustomEventFwUpdateStart = 250,
+    WlanAppCustomEventFwUpdateCancel = 251,
+    WlanAppCustomEventFwUpdateInstall = 252,
+    WlanAppCustomEventFwUpdateFinished = 253,
+    WlanAppCustomEventFwUpdateSkip = 254,
 } WlanAppCustomEvent;

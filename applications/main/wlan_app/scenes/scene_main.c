@@ -12,8 +12,8 @@ enum MainIndex {
     MainIndexChannelSsidSpam = 13,
     MainIndexChannelSmartDeauth = 14,
     MainIndexChannelEvilPortal = 15,
-    MainIndexUpdateSd = 16,
     MainIndexWebFs = 17,
+    MainIndexUpdate = 18,
 };
 
 static void wlan_app_scene_main_submenu_cb(void* context, uint32_t index) {
@@ -29,8 +29,8 @@ void wlan_app_scene_main_on_enter(void* context) {
     // Channel-Aktionen sind immer sichtbar; Verbindungs-Aktionen sind state-abhängig.
     app->channel_mode_active = false;
     // Hub-Scene: ein evtl. abgebrochener Update-SD-Flow wird hier zurückgesetzt.
-    app->update_sd_flow = false;
     app->webfs_flow = false;
+    app->fw_update_flow = false;
 
     if(!app->connected && !app->target_selected) {
         submenu_add_item_centered(
@@ -74,7 +74,7 @@ void wlan_app_scene_main_on_enter(void* context) {
         app->submenu, "Evil Portal", MainIndexChannelEvilPortal,
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
-        app->submenu, "Update SD", MainIndexUpdateSd,
+        app->submenu, "Update", MainIndexUpdate,
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Web-Filesystem", MainIndexWebFs,
@@ -149,13 +149,12 @@ bool wlan_app_scene_main_on_event(void* context, SceneManagerEvent event) {
             scene_manager_next_scene(app->scene_manager, WlanAppSceneEvilPortalMenu);
             consumed = true;
             break;
-        case MainIndexUpdateSd:
-            app->update_sd_flow = true;
+        case MainIndexUpdate:
+            // Kombiniertes Update: prüft erst die Firmware, dann die SD-Dateien.
+            app->fw_update_flow = true;
             if(app->connected) {
-                // Bereits verbunden → direkt zur Bestätigung.
-                scene_manager_next_scene(app->scene_manager, WlanAppSceneUpdateSd);
+                scene_manager_next_scene(app->scene_manager, WlanAppSceneFwUpdate);
             } else {
-                // Kein WLAN → gleicher Connect-Flow wie "Select Wifi".
                 scene_manager_next_scene(app->scene_manager, WlanAppSceneConnect);
             }
             consumed = true;

@@ -128,10 +128,9 @@ bool wlan_app_scene_ssid_connect_on_event(void* context, SceneManagerEvent event
                 scene_manager_set_scene_state(
                     app->scene_manager, WlanAppSceneWebFsInfo, 0 /* STA */);
                 scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsInfo);
-            } else if(app->update_sd_flow) {
-                // Update-SD-Flow braucht keinen ARP-Scan → direkt zur
-                // Bestätigung/Download-Scene.
-                scene_manager_next_scene(app->scene_manager, WlanAppSceneUpdateSd);
+            } else if(app->fw_update_flow) {
+                // Kombiniertes Update (FW + SD) → direkt zur Update-Scene.
+                scene_manager_next_scene(app->scene_manager, WlanAppSceneFwUpdate);
             } else {
                 // gw_mac aus DHCP-Antwort sollte jetzt in der ARP-Tabelle stehen.
                 wlan_netcut_preflight(app->netcut);

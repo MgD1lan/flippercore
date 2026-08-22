@@ -104,6 +104,10 @@ static WlanApp* wlan_app_alloc(void) {
     view_set_context(app->view_sd_update, app->view_dispatcher);
     view_dispatcher_add_view(app->view_dispatcher, WlanAppViewSdUpdate, app->view_sd_update);
 
+    app->view_fw_update = wlan_fw_update_view_alloc();
+    view_set_context(app->view_fw_update, app->view_dispatcher);
+    view_dispatcher_add_view(app->view_dispatcher, WlanAppViewFwUpdate, app->view_fw_update);
+
 
     app->ap_records = malloc(sizeof(WlanApRecord) * WLAN_APP_MAX_APS);
     app->ap_count = 0;
@@ -136,8 +140,11 @@ static WlanApp* wlan_app_alloc(void) {
     app->attack_block_internet = false;
     app->attack_throttle = WlanAppThrottleOff;
 
-    app->update_sd_flow = false;
     app->sd_update = wlan_sd_update_alloc();
+    app->fw_update = wlan_fw_update_alloc();
+    // FW-Marker /ext/.fw_version einmalig anlegen (falls fehlend), bevor der
+    // User "Update" wählt — verhindert ein unnötiges FW-Update nach Erst-Flash.
+    wlan_fw_update_seed_marker();
 
     // SMB Browser: lazily allocated on first use (allocates PSRAM buffers +
     // a worker task), freed in wlan_app_free.
@@ -189,6 +196,10 @@ static void wlan_app_free(WlanApp* app) {
         wlan_sd_update_free(app->sd_update);
         app->sd_update = NULL;
     }
+    if(app->fw_update) {
+        wlan_fw_update_free(app->fw_update);
+        app->fw_update = NULL;
+    }
     if(app->smb) {
         wlan_smb_free(app->smb);
         app->smb = NULL;
@@ -212,6 +223,7 @@ static void wlan_app_free(WlanApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewEvilPortalCaptured);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewLiveCreds);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSdUpdate);
+    view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewFwUpdate);
 
     submenu_free(app->submenu);
     widget_free(app->widget);
@@ -230,6 +242,7 @@ static void wlan_app_free(WlanApp* app) {
     wlan_evil_portal_captured_view_free(app->evil_portal_captured_view_obj);
     wlan_live_creds_view_free(app->live_creds_view_obj);
     wlan_sd_update_view_free(app->view_sd_update);
+    wlan_fw_update_view_free(app->view_fw_update);
 
     scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);

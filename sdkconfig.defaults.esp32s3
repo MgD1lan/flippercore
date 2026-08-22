@@ -7,10 +7,10 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
-# Single-app partition table for the 16 MB flash. See partitions_singleapp_16mb.csv.
+# Dual-OTA partition table for the 16 MB flash (self-update). See partitions_ota_16mb.csv.
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_singleapp_16mb.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_16mb.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ota_16mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_ota_16mb.csv"
 
 # ESP32-S3 is dual-core Xtensa — keep unicore for Furi compatibility
 CONFIG_FREERTOS_UNICORE=y
