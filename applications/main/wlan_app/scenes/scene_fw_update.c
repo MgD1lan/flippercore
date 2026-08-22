@@ -26,6 +26,16 @@ typedef enum {
 #define UPD_DONE_POPUP_MS 2500
 #define UPD_INFO_POPUP_MS 1500
 
+// Verlässt die Update-Scene: zurück zu Main (aus dem WiFi-Menü) oder — wenn per
+// Launch-Arg "update" aus dem Settings-Menü gestartet, wo kein Main im Stack ist
+// — eine Scene zurück, was die App beendet.
+static void upd_leave(WlanApp* app) {
+    if(!scene_manager_search_and_switch_to_previous_scene(
+           app->scene_manager, WlanAppSceneMain)) {
+        scene_manager_previous_scene(app->scene_manager);
+    }
+}
+
 static void upd_set_state(WlanApp* app, UpdState s) {
     scene_manager_set_scene_state(app->scene_manager, WlanAppSceneFwUpdate, s);
 }
@@ -208,13 +218,11 @@ bool wlan_app_scene_fw_update_on_event(void* context, SceneManagerEvent event) {
             // Während des Flashens NICHT abbrechen (OTA-Task läuft sonst verwaist
             // weiter, Reboot bliebe aus).
             if(upd_get_state(app) != UpdFwFlashing) {
-                scene_manager_search_and_switch_to_previous_scene(
-                    app->scene_manager, WlanAppSceneMain);
+                upd_leave(app);
             }
             consumed = true;
         } else if(event.event == WlanAppCustomEventFwUpdateFinished) {
-            scene_manager_search_and_switch_to_previous_scene(
-                app->scene_manager, WlanAppSceneMain);
+            upd_leave(app);
             consumed = true;
         } else if(event.event == WlanAppCustomEventFwUpdateSkip) {
             // Firmware übersprungen → mit der SD-Phase weitermachen.

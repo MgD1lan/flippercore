@@ -270,6 +270,16 @@ int32_t wlan_app(void* args) {
         } else {
             scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsMenu);
         }
+    } else if(arg && strcmp(arg, "update") == 0) {
+        // "Update Firmware" aus dem Settings-Menü: kombiniertes Update (FW + SD)
+        // direkt öffnen. Bereits verbunden → direkt zur Update-Scene, sonst erst
+        // Connect-Flow (fw_update_flow routet nach Erfolg zur Update-Scene).
+        app->fw_update_flow = true;
+        if(wlan_hal_is_connected()) {
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneFwUpdate);
+        } else {
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneConnect);
+        }
     } else {
         scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
     }

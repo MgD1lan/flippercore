@@ -13,7 +13,6 @@ enum MainIndex {
     MainIndexChannelSmartDeauth = 14,
     MainIndexChannelEvilPortal = 15,
     MainIndexWebFs = 17,
-    MainIndexUpdate = 18,
 };
 
 static void wlan_app_scene_main_submenu_cb(void* context, uint32_t index) {
@@ -72,9 +71,6 @@ void wlan_app_scene_main_on_enter(void* context) {
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Evil Portal", MainIndexChannelEvilPortal,
-        wlan_app_scene_main_submenu_cb, app);
-    submenu_add_item(
-        app->submenu, "Update", MainIndexUpdate,
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Web-Filesystem", MainIndexWebFs,
@@ -147,16 +143,6 @@ bool wlan_app_scene_main_on_event(void* context, SceneManagerEvent event) {
             break;
         case MainIndexChannelEvilPortal:
             scene_manager_next_scene(app->scene_manager, WlanAppSceneEvilPortalMenu);
-            consumed = true;
-            break;
-        case MainIndexUpdate:
-            // Kombiniertes Update: prüft erst die Firmware, dann die SD-Dateien.
-            app->fw_update_flow = true;
-            if(app->connected) {
-                scene_manager_next_scene(app->scene_manager, WlanAppSceneFwUpdate);
-            } else {
-                scene_manager_next_scene(app->scene_manager, WlanAppSceneConnect);
-            }
             consumed = true;
             break;
         case MainIndexWebFs:

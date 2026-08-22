@@ -407,6 +407,17 @@ static void
     }
 }
 
+static void loader_menu_update_fw_callback(void* context, uint32_t index) {
+    UNUSED(context);
+    UNUSED(index);
+    /* Firmware-/SD-Update lebt in der WiFi-App; dort in den kombinierten
+     * Update-Flow springen (Launch-Arg "update"). Gleiches Muster wie der
+     * Web-Filesystem-Start aus dem Desktop-Lock-Menü. */
+    Loader* loader = furi_record_open(RECORD_LOADER);
+    loader_start_detached_with_gui_error(loader, "wlan", "update");
+    furi_record_close(RECORD_LOADER);
+}
+
 static void loader_menu_settings_interface_callback(void* context, uint32_t index) {
     UNUSED(index);
     LoaderMenuApp* app = context;
@@ -422,6 +433,15 @@ static void loader_menu_build_submenu(LoaderMenuApp* app) {
             (uint32_t)FLIPPER_EXTSETTINGS_APPS[i].path,
             loader_menu_settings_menu_callback,
             app);
+        /* "Update Firmware" direkt nach "About" einfügen (vor "Bluetooth"). */
+        if(strcmp(FLIPPER_EXTSETTINGS_APPS[i].path, "about") == 0) {
+            submenu_add_item(
+                app->settings_menu,
+                "Update Firmware",
+                0,
+                loader_menu_update_fw_callback,
+                app);
+        }
     }
     for(size_t i = 0; i < FLIPPER_SETTINGS_APPS_COUNT; i++) {
         /* "Interface" is handled by our own Interface submenu below - skip the
