@@ -108,6 +108,10 @@ static WlanApp* wlan_app_alloc(void) {
     view_set_context(app->view_fw_update, app->view_dispatcher);
     view_dispatcher_add_view(app->view_dispatcher, WlanAppViewFwUpdate, app->view_fw_update);
 
+    app->view_androidtv_remote = wlan_androidtv_remote_view_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, WlanAppViewAndroidTvRemote, app->view_androidtv_remote);
+
 
     app->ap_records = malloc(sizeof(WlanApRecord) * WLAN_APP_MAX_APS);
     app->ap_count = 0;
@@ -155,6 +159,13 @@ static WlanApp* wlan_app_alloc(void) {
     app->smb_pass[0] = '\0';
     app->smb_share[0] = '\0';
     app->smb_path[0] = '\0';
+
+    // Android TV remote: lazily allocated on first use (allocates PSRAM buffers
+    // + a worker task with an internal-DRAM stack), freed in wlan_app_free.
+    app->androidtv = NULL;
+    app->androidtv_ip[0] = '\0';
+    app->androidtv_name[0] = '\0';
+    app->androidtv_pin[0] = '\0';
 
     app->text_buf = furi_string_alloc();
     app->netcut = wlan_netcut_alloc();
@@ -204,6 +215,10 @@ static void wlan_app_free(WlanApp* app) {
         wlan_smb_free(app->smb);
         app->smb = NULL;
     }
+    if(app->androidtv) {
+        wlan_androidtv_free(app->androidtv);
+        app->androidtv = NULL;
+    }
     wlan_hal_stop();
 
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSubmenu);
@@ -224,6 +239,7 @@ static void wlan_app_free(WlanApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewLiveCreds);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSdUpdate);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewFwUpdate);
+    view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewAndroidTvRemote);
 
     submenu_free(app->submenu);
     widget_free(app->widget);
@@ -243,6 +259,7 @@ static void wlan_app_free(WlanApp* app) {
     wlan_live_creds_view_free(app->live_creds_view_obj);
     wlan_sd_update_view_free(app->view_sd_update);
     wlan_fw_update_view_free(app->view_fw_update);
+    wlan_androidtv_remote_view_free(app->view_androidtv_remote);
 
     scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);

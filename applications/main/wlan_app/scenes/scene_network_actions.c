@@ -7,6 +7,7 @@ enum NetworkActionsIndex {
     NaIndexEvilPortal,
     NaIndexSmb,
     NaIndexAirSnitch,
+    NaIndexAndroidTv,
 };
 
 static void network_actions_submenu_cb(void* context, uint32_t index) {
@@ -41,6 +42,11 @@ void wlan_app_scene_network_actions_on_enter(void* context) {
     // nur anzeigen, wenn verbunden.
     if(app->connected) {
         submenu_add_item(app->submenu, "AirSnitch", NaIndexAirSnitch, network_actions_submenu_cb, app);
+    }
+    // Android TV remote braucht die STA-Verbindung + die gescannte Geräteliste.
+    if(app->connected) {
+        submenu_add_item(
+            app->submenu, "Android TV", NaIndexAndroidTv, network_actions_submenu_cb, app);
     }
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewSubmenu);
@@ -91,6 +97,10 @@ bool wlan_app_scene_network_actions_on_event(void* context, SceneManagerEvent ev
             break;
         case NaIndexAirSnitch:
             scene_manager_next_scene(app->scene_manager, WlanAppSceneAirSnitchScan);
+            consumed = true;
+            break;
+        case NaIndexAndroidTv:
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneAndroidTvScan);
             consumed = true;
             break;
         }

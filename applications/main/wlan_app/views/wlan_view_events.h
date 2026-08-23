@@ -81,4 +81,7 @@ typedef enum {
     WlanAppCustomEventFwUpdateInstall = 252,
     WlanAppCustomEventFwUpdateFinished = 253,
     WlanAppCustomEventFwUpdateSkip = 254,
+
+    WlanAppCustomEventAndroidTvPinDone = 260,
+    WlanAppCustomEventAndroidTvRetry = 261,
 } WlanAppCustomEvent;

@@ -20,7 +20,9 @@
 #include "wlan_fw_update.h"
 #include "wlan_webfs.h"
 #include "wlan_smb.h"
+#include "wlan_androidtv.h"
 #include "views/wlan_lan_view.h"
+#include "views/wlan_androidtv_remote_view.h"
 #include "views/wlan_connect_view.h"
 #include "views/wlan_portscan_view.h"
 #include "views/wlan_handshake_view.h"
@@ -60,6 +62,7 @@ typedef enum {
     WlanAppViewLiveCreds,
     WlanAppViewSdUpdate,
     WlanAppViewFwUpdate,
+    WlanAppViewAndroidTvRemote,
 } WlanAppView;
 
 typedef struct {
@@ -280,6 +283,14 @@ struct WlanApp {
     char smb_dl_path[WLAN_SMB_PATH_MAX];
     char smb_dl_name[WLAN_SMB_NAME_MAX];
     bool smb_dl_is_dir;
+
+    // Android TV remote (only shown when connected). androidtv is lazily
+    // allocated on first use and freed in wlan_app_free.
+    WlanAndroidTv* androidtv;
+    View* view_androidtv_remote;
+    char androidtv_ip[64]; // selected TV ("a.b.c.d")
+    char androidtv_name[WLAN_ATV_NAME_MAX]; // host/NetBIOS label from the scan
+    char androidtv_pin[8]; // 6-hex PIN entered during pairing
 };
 
 /** Schlüssel der aktuellen Picker-Assoziation: Channel-Key im Channel-Mode,
