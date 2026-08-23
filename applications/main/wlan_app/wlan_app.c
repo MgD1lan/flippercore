@@ -142,9 +142,9 @@ static WlanApp* wlan_app_alloc(void) {
 
     app->sd_update = wlan_sd_update_alloc();
     app->fw_update = wlan_fw_update_alloc();
-    // FW-Marker /ext/.fw_version einmalig anlegen (falls fehlend), bevor der
-    // User "Update" wählt — verhindert ein unnötiges FW-Update nach Erst-Flash.
-    wlan_fw_update_seed_marker();
+    // FW-Marker /ext/.fw_version auf die laufende Version (FURI_ESP32_VERSION)
+    // ziehen — schreibt nur, wenn er fehlt oder abweicht.
+    wlan_fw_update_sync_marker();
 
     // SMB Browser: lazily allocated on first use (allocates PSRAM buffers +
     // a worker task), freed in wlan_app_free.

@@ -32,16 +32,16 @@ typedef struct WlanFwUpdate WlanFwUpdate;
 
 WlanFwUpdate* wlan_fw_update_alloc(void);
 
-/** Legt den FW-Marker /ext/.fw_version einmalig an, falls er fehlt — aus der
- *  vorhandenen /ext/version.txt (SD-Release-Version, beim gebündelten Release ==
- *  FW-Version). Verhindert, dass der erste "Update"-Aufruf nach dem Erst-Flash
- *  ein unnötiges FW-Update anbietet. No-op wenn Marker existiert oder keine
- *  /ext/version.txt da ist. Nur Storage-IO, aus jedem Thread aufrufbar. */
-void wlan_fw_update_seed_marker(void);
+/** Schreibt die einkompilierte Version (FURI_ESP32_VERSION aus
+ *  <toolbox/fw_version.h>) in den Marker /ext/.fw_version, falls dieser fehlt
+ *  oder abweicht. Der Marker ist damit immer die FW-Version, die gerade laeuft
+ *  — lesbar von aussen (WebFS/qFlipper) und Fallback fuer den Versions-Check.
+ *  No-op wenn er schon stimmt. Nur Storage-IO, aus jedem Thread aufrufbar. */
+void wlan_fw_update_sync_marker(void);
 
 void wlan_fw_update_free(WlanFwUpdate* u);
 
-/** Startet den Versions-Check (Remote-version.txt vs. /ext/version.txt). */
+/** Startet den Versions-Check (Remote-version.txt vs. FURI_ESP32_VERSION). */
 void wlan_fw_update_check_start(WlanFwUpdate* u);
 
 /** Startet den Download der furi_esp32.bin nach /ext/update/. */

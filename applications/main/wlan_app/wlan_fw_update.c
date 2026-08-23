@@ -2,6 +2,7 @@
 
 #include <furi.h>
 #include <storage/storage.h>
+#include <toolbox/fw_version.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -18,8 +19,9 @@
 #define FW_VERSION_URL FW_BASE_URL "/version.txt"
 #define FW_BIN_URL FW_BASE_URL "/furi_esp32.bin"
 // Eigene FW-Marker-Datei (getrennt von /ext/version.txt, die der SD-Sync
-// verwaltet): hält die zuletzt per OTA geflashte Version. So bleibt "FW
-// aktuell?" über den Reboot hinweg zuverlaessig erkennbar (kein Update-Loop).
+// verwaltet): spiegelt die laufende FW-Version auf die SD. Autoritativ fuer
+// "FW aktuell?" ist FURI_ESP32_VERSION (toolbox/fw_version.h) — der Marker ist
+// nur Fallback/Info (siehe fw_check_task).
 #define FW_MARKER "/ext/.fw_version"
 #define FW_LOCAL_DIR "/ext/update"
 #define FW_LOCAL_BIN FW_LOCAL_DIR "/furi_esp32.bin"
@@ -163,14 +165,17 @@ static void fw_check_task(void* arg) {
     strncpy(u->remote_version, remote, sizeof(u->remote_version) - 1);
     u->remote_version[sizeof(u->remote_version) - 1] = '\0';
 
+    // Autoritativ ist die einkompilierte Version der laufenden Firmware — die
+    // stimmt nach jedem OTA automatisch und ueberlebt einen SD-Kartentausch.
+    // Der Marker auf der SD ist nur Fallback: er faengt den Update-Loop ab,
+    // falls ein Release-Binary eine abweichende einkompilierte Version traegt.
     bool have_local = fw_read_local_version(local, sizeof(local));
     fw_trim(local);
 
-    if(have_local && remote[0] != '\0' && strcmp(remote, local) == 0) {
-        u->phase = FwUpdateUpToDate;
-    } else {
-        u->phase = FwUpdateAvailable;
-    }
+    bool up_to_date = remote[0] != '\0' && (strcmp(remote, FURI_ESP32_VERSION) == 0 ||
+                                            (have_local && strcmp(remote, local) == 0));
+
+    u->phase = up_to_date ? FwUpdateUpToDate : FwUpdateAvailable;
     fw_finish(u);
 }
 
@@ -399,29 +404,16 @@ static void fw_flash_task(void* arg) {
 // Public API
 // ---------------------------------------------------------------------------
 
-void wlan_fw_update_seed_marker(void) {
+void wlan_fw_update_sync_marker(void) {
+    // Marker auf die laufende FW-Version ziehen (nur schreiben, wenn er fehlt
+    // oder abweicht — kein Flash-/SD-Write bei jedem App-Start).
+    char cur[32] = {0};
+    bool have = fw_read_local_version(cur, sizeof(cur));
+    fw_trim(cur);
+    if(have && strcmp(cur, FURI_ESP32_VERSION) == 0) return;
+
     Storage* st = furi_record_open(RECORD_STORAGE);
-    FileInfo fi;
-    // Marker existiert bereits → nichts tun.
-    if(storage_common_stat(st, FW_MARKER, &fi) == FSE_OK) {
-        furi_record_close(RECORD_STORAGE);
-        return;
-    }
-    // Aus /ext/version.txt (SD-Release-Version) seeden, falls vorhanden.
-    char ver[32] = {0};
-    File* f = storage_file_alloc(st);
-    bool have = false;
-    if(storage_file_open(f, "/ext/version.txt", FSAM_READ, FSOM_OPEN_EXISTING)) {
-        size_t r = storage_file_read(f, ver, sizeof(ver) - 1);
-        ver[r] = '\0';
-        have = r > 0;
-    }
-    storage_file_close(f);
-    storage_file_free(f);
-    if(have) {
-        fw_trim(ver);
-        if(ver[0]) fw_write_local_version(st, ver); // schreibt FW_MARKER
-    }
+    fw_write_local_version(st, FURI_ESP32_VERSION);
     furi_record_close(RECORD_STORAGE);
 }
 
