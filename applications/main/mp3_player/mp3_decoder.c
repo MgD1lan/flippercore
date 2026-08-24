@@ -1,6 +1,6 @@
 #include "mp3_decoder.h"
 #include "mp3_player.h"
-#include "mp3_i2s.h"
+#include "mp3_sink.h"
 
 #include <string.h>
 
@@ -138,7 +138,7 @@ static int32_t decoder_task(void* ctx) {
         if(d->read_left < 4) {
             /* True EOF — wait for the I2S queue to drain, then notify. */
             if(d->eof) {
-                while(mp3_i2s_has_pending() && d->playing) {
+                while(mp3_sink_has_pending() && d->playing) {
                     furi_delay_ms(50);
                 }
                 break;
@@ -179,14 +179,14 @@ static int32_t decoder_task(void* ctx) {
         if(first_frame) {
             d->sample_rate = fi.samprate;
             d->channels    = fi.nChans;
-            mp3_i2s_set_sample_rate(fi.samprate);
+            mp3_sink_set_sample_rate(fi.samprate);
             decoder_estimate_duration(d, &fi);
             first_frame = false;
             FURI_LOG_I(TAG, "first frame: %d Hz, %d ch, %d kbps",
                        fi.samprate, fi.nChans, fi.bitrate / 1000);
         } else if((uint32_t)fi.samprate != d->sample_rate) {
             d->sample_rate = fi.samprate;
-            mp3_i2s_set_sample_rate(fi.samprate);
+            mp3_sink_set_sample_rate(fi.samprate);
         }
 
         /* Convert / push to I2S. fi.outputSamps is total int16 samples in pcm,
@@ -201,7 +201,7 @@ static int32_t decoder_task(void* ctx) {
                 d->pcm[i * 2 + 1] = s;
             }
         }
-        mp3_i2s_push(d->pcm, frames, 1000);
+        mp3_sink_push(d->pcm, frames, 1000);
 
         /* Update progress. */
         d->elapsed_ms += (uint32_t)((uint64_t)frames * 1000 / fi.samprate);
@@ -214,7 +214,7 @@ static int32_t decoder_task(void* ctx) {
     if(d->file) {
         storage_file_close(d->file);
     }
-    mp3_i2s_flush();
+    mp3_sink_flush();
 
     if(d->ended_cb) d->ended_cb(d->ended_ctx);
     return 0;

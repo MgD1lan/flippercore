@@ -8,6 +8,8 @@
 #include <furi.h>
 #include <gui/gui.h>
 
+#include "airplay_ui.h"
+
 #define MP3_PLAYER_TAG          "MP3Player"
 #define MP3_PLAYER_DATA_DIR     "/ext/apps_data/mp3_player"
 #define MP3_PLAYER_MAX_TRACKS   128
@@ -25,6 +27,7 @@ typedef struct {
 typedef enum {
     Mp3ViewBrowser,
     Mp3ViewNowPlaying,
+    Mp3ViewConfig,
 } Mp3View;
 
 typedef enum {
@@ -51,6 +54,16 @@ typedef struct {
     uint32_t         elapsed_ms;     /* updated by decoder thread */
     uint32_t         duration_ms;    /* 0 if unknown */
     uint8_t          volume;         /* 0..100 */
+    bool             shuffle;        /* random next-track order */
+    bool             repeat;         /* loop the current track forever */
+
+    /* config (settings) screen */
+    int32_t          config_sel;     /* cursor in the config menu */
+    bool             config_editing; /* volume item in edit mode (rotate adjusts) */
+
+    /* AirPlay output setup (WiFi connect + RAOP device discovery). Owns its own
+     * sub-flow; the player delegates render/input to it while it is active. */
+    AirplayUi*       airplay;
 } Mp3App;
 
 typedef enum {
