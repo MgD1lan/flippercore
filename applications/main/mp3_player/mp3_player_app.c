@@ -165,33 +165,47 @@ static void render_config(Canvas* canvas, Mp3App* app) {
     char volbuf[8];
     snprintf(volbuf, sizeof(volbuf), "%u%%", (unsigned)app->volume);
 
-    const char* labels[4] = {"Audio Output", "Shuffle", "Volume", "Repeat"};
-    const char* values[4] = {
+    const char* labels[6] = {"Audio Output", "Repeat", "Shuffle", "Volume", "Play MP3", "Exit"};
+    const char* values[6] = {
         airplay_on ? "AirPlay" : "Speaker",
+        app->repeat ? "On" : "Off",
         app->shuffle ? "On" : "Off",
         volbuf,
-        app->repeat ? "On" : "Off",
+        NULL, /* Play MP3 — action row */
+        NULL, /* Exit — action row */
     };
 
-    for(int i = 0; i < 4; i++) {
-        int y = 13 + i * 13;
-        bool sel = (app->config_sel == i);
+    /* Scroll window so the cursor stays visible (5 rows fit under the title). */
+    const int total = 6;
+    const int visible = 5;
+    int top = app->config_sel - visible / 2;
+    if(top < 0) top = 0;
+    if(top > total - visible) top = total - visible;
+    if(top < 0) top = 0;
+
+    for(int idx = top; idx < top + visible && idx < total; idx++) {
+        int y = 13 + (idx - top) * 10;
+        bool sel = (app->config_sel == idx);
         if(sel) {
-            canvas_draw_box(canvas, 0, y, 128, 12);
+            canvas_draw_box(canvas, 0, y, 128, 10);
             canvas_invert_color(canvas);
         }
-        canvas_draw_str(canvas, 4, y + 9, labels[i]);
-        if(values[i]) {
+        canvas_draw_str(canvas, 4, y + 8, labels[idx]);
+        if(values[idx]) {
             char vb[16];
-            /* Volume in edit mode: wrap in < > to show rotation adjusts it. */
-            if(i == 2 && sel && app->config_editing) {
-                snprintf(vb, sizeof(vb), "<%s>", values[i]);
+            /* Volume (index 3) in edit mode: wrap in < > to show rotation adjusts it. */
+            if(idx == 3 && sel && app->config_editing) {
+                snprintf(vb, sizeof(vb), "<%s>", values[idx]);
             } else {
-                snprintf(vb, sizeof(vb), "%s", values[i]);
+                snprintf(vb, sizeof(vb), "%s", values[idx]);
             }
-            canvas_draw_str_aligned(canvas, 124, y + 9, AlignRight, AlignBottom, vb);
+            canvas_draw_str_aligned(canvas, 124, y + 8, AlignRight, AlignBottom, vb);
         }
         if(sel) canvas_invert_color(canvas);
+    }
+    /* simple scroll indicator: a down-arrow hint when more rows are below */
+    if(top + visible < total) {
+        canvas_draw_str_aligned(canvas, 123, 63, AlignRight, AlignBottom, "v");
     }
     /* No bottom action buttons — the settings list mirrors the SubGhz
      * VariableItemList look (rotate = navigate, OK = select, Back = leave). */
@@ -294,7 +308,10 @@ static bool handle_browser_input(Mp3App* app, const InputEvent* in) {
         if(app->playlist.count > 0) start_track(app, app->selected);
         break;
     case InputKeyBack:
-        return false;  /* exit app */
+        /* Back from the list returns to the Config (the app's root screen). */
+        app->config_sel = 0;
+        app->view = Mp3ViewConfig;
+        break;
     default:
         break;
     }
@@ -352,7 +369,7 @@ static bool handle_now_playing_input(Mp3App* app, const InputEvent* in) {
     return true;
 }
 
-#define MP3_CONFIG_ITEMS 4 /* Audio Output, Shuffle, Volume, Repeat */
+#define MP3_CONFIG_ITEMS 5 /* Audio Output, Shuffle, Volume, Repeat, Play MP3 */
 
 static bool handle_config_input(Mp3App* app, const InputEvent* in) {
     if(in->type != InputTypeShort && in->type != InputTypeRepeat) return true;
@@ -389,15 +406,25 @@ static bool handle_config_input(Mp3App* app, const InputEvent* in) {
             /* Audio Output → Speaker/AirPlay select screen (airplay UI takes over) */
             airplay_ui_enter(app->airplay);
         } else if(app->config_sel == 1) {
-            app->shuffle = !app->shuffle;
-        } else if(app->config_sel == 2) {
-            app->config_editing = true; /* enter volume edit */
-        } else {
             app->repeat = !app->repeat;
+        } else if(app->config_sel == 2) {
+            app->shuffle = !app->shuffle;
+        } else if(app->config_sel == 3) {
+            app->config_editing = true; /* enter volume edit */
+        } else if(app->config_sel == 4) {
+            app->view = Mp3ViewBrowser; /* Play MP3 → track list */
+        } else {
+            return false; /* Exit → leave the app */
         }
         break;
     case InputKeyBack:
-        app->view = Mp3ViewNowPlaying;
+        /* Config is the root screen: go to Now-Playing if a track is loaded,
+         * otherwise leave the app. */
+        if(app->playback != Mp3StateIdle && app->playing_index >= 0) {
+            app->view = Mp3ViewNowPlaying;
+        } else {
+            return false; /* exit app */
+        }
         break;
     default:
         break;
@@ -414,7 +441,7 @@ int32_t mp3_player_app(void* p) {
     Mp3App* app = malloc(sizeof(Mp3App));
     app->mutex       = furi_mutex_alloc(FuriMutexTypeNormal);
     app->event_queue = furi_message_queue_alloc(16, sizeof(Mp3Event));
-    app->view        = Mp3ViewBrowser;
+    app->view        = Mp3ViewConfig; /* app opens on the config/settings screen */
     app->selected    = 0;
     app->playback    = Mp3StateIdle;
     app->playing_index = -1;
