@@ -77,6 +77,10 @@ static uint16_t bg_color;
 #define STRIPE_HEIGHT 8
 
 static esp_lcd_panel_handle_t panel_handle = NULL;
+/* Tracks whether the panel is in display-off (sleep). Guards the sleep/wake
+ * pair so repeated backlight-off / backlight-on writes don't issue redundant
+ * SPI commands, and so wake is a no-op when already awake. */
+static bool panel_is_asleep = false;
 static uint16_t* rgb565_buf = NULL; // STRIPE_HEIGHT lines only
 static SemaphoreHandle_t lcd_flush_done = NULL;
 static uint8_t x_scale_lut[SCALED_WIDTH];
@@ -358,15 +362,48 @@ void furi_hal_display_commit(const uint8_t* data, uint32_t size) {
 }
 
 void furi_hal_display_set_backlight(uint8_t brightness) {
-    furi_hal_light_set(LightBacklight, brightness);
+    if(brightness == 0) {
+        /* Screen going dark (e.g. the notification display-off timer fired): cut
+         * the backlight PWM, then put the ST7789 to sleep. The frame buffer is
+         * retained in panel RAM, so waking shows the last frame with no re-init.
+         * In this port a backlight value of 0 always means "screen off" (LED
+         * blinks drive the RGB ring, not the display backlight; the notification
+         * service's Internal layer is 0 unless an app has enforced the backlight
+         * on), so it is safe to tie panel sleep to it. */
+        furi_hal_light_set(LightBacklight, 0);
+        furi_hal_display_sleep();
+    } else {
+        /* Screen coming back: wake the panel before raising the backlight so we
+         * never illuminate a blank panel. */
+        furi_hal_display_wakeup();
+        furi_hal_light_set(LightBacklight, brightness);
+    }
 }
 
 void furi_hal_display_sleep(void) {
     if(!panel_handle) return;
+    if(panel_is_asleep) return;
     furi_hal_spi_bus_lock();
-    /* SLPIN: stop the panel's internal oscillator/booster to cut idle current */
+    /* DISPOFF alone only blanks the output; the panel's DC/DC, oscillator and
+     * scanning keep running. SLPIN is what actually stops them. GRAM is kept
+     * through both. The IDF driver waits ~100 ms after SLPIN. */
     esp_lcd_panel_disp_on_off(panel_handle, false);
+    esp_lcd_panel_disp_sleep(panel_handle, true);
     furi_hal_spi_bus_unlock();
+    panel_is_asleep = true;
+}
+
+void furi_hal_display_wakeup(void) {
+    if(!panel_handle) return;
+    if(!panel_is_asleep) return;
+    furi_hal_spi_bus_lock();
+    /* SLPOUT first (the IDF driver waits ~100 ms for the oscillator/DC-DC to
+     * settle), then DISPON. That delay is the wake-from-screen-off latency the
+     * user sees on the first key press. */
+    esp_lcd_panel_disp_sleep(panel_handle, false);
+    esp_lcd_panel_disp_on_off(panel_handle, true);
+    furi_hal_spi_bus_unlock();
+    panel_is_asleep = false;
 }
 
 uint16_t furi_hal_display_get_h_res(void) {
