@@ -10,6 +10,8 @@
 #include "target_input.h"
 
 #include <furi.h>
+#include <furi_hal_power.h>
+#include <furi_hal_display.h>
 
 #define TAG "Input"
 #define INPUT_POLL_MS 4U
@@ -63,6 +65,10 @@ int32_t input_srv(void* p) {
     uint32_t sequence_counter = 0;
 
     while(true) {
+        /* Permit light sleep only while the screen is off and on battery;
+         * re-checked each poll so plugging USB closes the gate promptly. */
+        furi_hal_power_allow_light_sleep(
+            furi_hal_display_is_asleep() && furi_hal_power_is_running_on_battery());
         furi_delay_ms(INPUT_POLL_MS);
         target_input_poll(event_pubsub, &sequence_counter);
     }

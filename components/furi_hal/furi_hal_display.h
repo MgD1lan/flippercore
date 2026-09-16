@@ -50,6 +50,10 @@ void furi_hal_display_sleep(void);
  */
 void furi_hal_display_wakeup(void);
 
+/** True if the panel is currently in display-off/sleep (i.e. the screen has
+ * timed out). Used to gate idle light sleep on "screen is off". */
+bool furi_hal_display_is_asleep(void);
+
 /** Set the UI foreground color (the tint that fills the "ink" of every
  * monochrome u8g2 frame on this color port). Stored as RGB565, byte-swapped
  * for the ST7789 SPI byte order.

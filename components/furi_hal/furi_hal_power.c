@@ -37,6 +37,13 @@
  * transaction) are not slowed by dynamic frequency scaling. NULL if the lock
  * could not be created, in which case insomnia becomes a no-op for DFS. */
 static esp_pm_lock_handle_t furi_hal_power_freq_lock = NULL;
+
+/* Master gate for automatic light sleep. Held by default so the SoC never
+ * light-sleeps; released only when idle (screen off, on battery). Even when
+ * released, IDF still only sleeps once every other lock is free (insomnia,
+ * peripheral/RMT locks, the WiFi/BT drivers' own locks). */
+static esp_pm_lock_handle_t furi_hal_power_no_ls_lock = NULL;
+static bool furi_hal_power_ls_allowed = false;
 #endif
 
 #define FURI_HAL_POWER_USB_PRESENT_THRESHOLD_V  (4.6f)
@@ -299,20 +306,13 @@ void furi_hal_power_init(void) {
      * the dominant battery sink on this port. Nothing ever lowered the fixed
      * 160 MHz clock before.
      *
-     * Automatic light sleep is deliberately left OFF: the input service polls
-     * the encoder and buttons every 4 ms with GPIO interrupts disabled, so there
-     * is no wake source and stopping the CPU would drop key presses. DFS never
-     * stops the CPU, so it is safe with the polled input. SubGHz is unaffected:
-     * RX is GDO0-interrupt driven and times pulses with esp_timer (XTAL-based,
-     * frequency-independent), TX uses the RMT peripheral, and the IDF SPI/RMT
-     * drivers hold their own PM locks during transfers. min_freq is 80 rather
-     * than 40 because 80 MHz is still PLL-sourced on the S3, which keeps APB at
-     * a constant 80 MHz -- so the LEDC backlight PWM and I2C timing never
-     * shift. Dropping to 40 (XTAL) would halve APB and glitch them. */
+     * DFS 80-160 MHz plus automatic light sleep, the latter gated by the
+     * NO_LIGHT_SLEEP lock below. min_freq is 80 (not 40) so APB stays
+     * PLL-sourced and the LEDC backlight PWM and I2C timing don't shift. */
     esp_pm_config_t pm_config = {
         .max_freq_mhz = 160,
         .min_freq_mhz = 80,
-        .light_sleep_enable = false,
+        .light_sleep_enable = true,
     };
     esp_err_t pm_err = esp_pm_configure(&pm_config);
     if(pm_err != ESP_OK) {
@@ -323,9 +323,18 @@ void furi_hal_power_init(void) {
         if(lock_err != ESP_OK) {
             ESP_LOGW(TAG, "esp_pm_lock_create failed: %s", esp_err_to_name(lock_err));
             furi_hal_power_freq_lock = NULL;
-        } else {
-            ESP_LOGI(TAG, "DFS enabled: 80-160 MHz");
         }
+
+        /* Create the light-sleep gate and hold it, so nothing sleeps until the
+         * idle state (screen off, on battery) explicitly permits it. */
+        lock_err = esp_pm_lock_create(
+            ESP_PM_NO_LIGHT_SLEEP, 0, "screen_on", &furi_hal_power_no_ls_lock);
+        if(lock_err != ESP_OK) {
+            furi_hal_power_no_ls_lock = NULL;
+        } else {
+            esp_pm_lock_acquire(furi_hal_power_no_ls_lock);
+        }
+        ESP_LOGI(TAG, "DFS 80-160 MHz + gated light sleep enabled");
     }
 #endif
 
@@ -418,6 +427,25 @@ void furi_hal_power_insomnia_exit(void) {
 
 bool furi_hal_power_sleep_available(void) {
     return furi_hal_power.insomnia == 0;
+}
+
+bool furi_hal_power_is_running_on_battery(void) {
+    /* Only an explicit VBUS sense is trusted. Without a charger IC we can't
+     * tell USB from battery, so assume wired and never light-sleep. */
+    return furi_hal_bq25896_is_present() && !furi_hal_bq25896_is_vbus_present();
+}
+
+void furi_hal_power_allow_light_sleep(bool allow) {
+#if CONFIG_PM_ENABLE
+    if(!furi_hal_power_no_ls_lock || allow == furi_hal_power_ls_allowed) return;
+    furi_hal_power_ls_allowed = allow;
+    if(allow)
+        esp_pm_lock_release(furi_hal_power_no_ls_lock);
+    else
+        esp_pm_lock_acquire(furi_hal_power_no_ls_lock);
+#else
+    (void)allow;
+#endif
 }
 
 void furi_hal_power_sleep(void) {

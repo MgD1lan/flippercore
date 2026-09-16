@@ -11,6 +11,7 @@
 #include <furi.h>
 #include <furi_hal_spi.h>
 #include <furi_hal_resources.h>
+#include <furi_hal_power.h>
 #include <cc1101.h>
 #include "boards/board.h"
 
@@ -752,6 +753,12 @@ void furi_hal_subghz_set_path(FuriHalSubGhzPath path) {
 void furi_hal_subghz_start_async_rx(FuriHalSubGhzCaptureCallback callback, void* context) {
     furi_check(callback);
 
+    /* Hold insomnia for the whole RX session. The CC1101 GDO0 capture is a plain
+     * GPIO interrupt that would NOT fire during light sleep (it is not a
+     * configured wake source), so we must keep the SoC awake, and at full clock,
+     * while receiving. Paired with the exit in stop_async_rx. */
+    furi_hal_power_insomnia_enter();
+
     ESP_LOGD(TAG, "start_async_rx: GDO0=GPIO%d freq=%lu connected=%d",
         gpio_cc1101_g0.pin, (unsigned long)furi_hal_subghz.frequency, furi_hal_subghz.connected);
 
@@ -785,6 +792,8 @@ void furi_hal_subghz_stop_async_rx(void) {
     furi_hal_subghz.async_rx_last_level = false;
     furi_hal_subghz.state = FuriHalSubGhzStateIdle;
     furi_hal_subghz_idle();
+
+    furi_hal_power_insomnia_exit();
 }
 
 bool furi_hal_subghz_start_async_tx(FuriHalSubGhzAsyncTxCallback callback, void* context) {
