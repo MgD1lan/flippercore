@@ -109,3 +109,9 @@ CONFIG_LWIP_L2_TO_L3_COPY=y
 # writes (would make PSRAM task stacks safe). Needs verified flash-chip support;
 # our chip is mfr 0x46 (no-name) so this is a test.
 CONFIG_SPI_FLASH_AUTO_SUSPEND=y
+
+# Power management: dynamic frequency scaling (80-160 MHz DFS). Configured at
+# runtime in furi_hal_power_init (esp_pm_configure, light sleep left off because
+# input is polled with no wake IRQ). Halves idle CPU draw. See furi_hal_power.c.
+# Note: IDF auto-loads this file after sdkconfig.defaults for the esp32s3 target.
+CONFIG_PM_ENABLE=y

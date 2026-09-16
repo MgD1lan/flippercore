@@ -13,6 +13,9 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
+#if CONFIG_PM_ENABLE
+#include <esp_pm.h>
+#endif
 #include <soc/soc_caps.h>
 #include <driver/i2c.h>
 #include <esp_system.h>
@@ -27,6 +30,14 @@
 #include "furi_hal_resources.h"
 
 #define TAG "FuriHalPower"
+
+#if CONFIG_PM_ENABLE
+/* Held whenever insomnia > 0. Pins the CPU at max frequency so timing-critical
+ * sections (bracketed with furi_hal_power_insomnia_enter/exit, e.g. every SPI
+ * transaction) are not slowed by dynamic frequency scaling. NULL if the lock
+ * could not be created, in which case insomnia becomes a no-op for DFS. */
+static esp_pm_lock_handle_t furi_hal_power_freq_lock = NULL;
+#endif
 
 #define FURI_HAL_POWER_USB_PRESENT_THRESHOLD_V  (4.6f)
 #define FURI_HAL_POWER_LOW_BATTERY_THRESHOLD_V  (3.35f)
@@ -281,6 +292,43 @@ static float furi_hal_power_get_estimated_battery_voltage(void) {
 void furi_hal_power_init(void) {
     furi_hal_power_ensure_initialized();
 
+#if CONFIG_PM_ENABLE
+    /* Dynamic frequency scaling: let the CPU idle at 80 MHz and ramp to 160 MHz
+     * only while a peripheral driver (SPI / RMT / I2C ...) or a timing-critical
+     * section (insomnia) needs it. This roughly halves idle CPU draw, which is
+     * the dominant battery sink on this port. Nothing ever lowered the fixed
+     * 160 MHz clock before.
+     *
+     * Automatic light sleep is deliberately left OFF: the input service polls
+     * the encoder and buttons every 4 ms with GPIO interrupts disabled, so there
+     * is no wake source and stopping the CPU would drop key presses. DFS never
+     * stops the CPU, so it is safe with the polled input. SubGHz is unaffected:
+     * RX is GDO0-interrupt driven and times pulses with esp_timer (XTAL-based,
+     * frequency-independent), TX uses the RMT peripheral, and the IDF SPI/RMT
+     * drivers hold their own PM locks during transfers. min_freq is 80 rather
+     * than 40 because 80 MHz is still PLL-sourced on the S3, which keeps APB at
+     * a constant 80 MHz -- so the LEDC backlight PWM and I2C timing never
+     * shift. Dropping to 40 (XTAL) would halve APB and glitch them. */
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false,
+    };
+    esp_err_t pm_err = esp_pm_configure(&pm_config);
+    if(pm_err != ESP_OK) {
+        ESP_LOGW(TAG, "esp_pm_configure failed: %s", esp_err_to_name(pm_err));
+    } else {
+        esp_err_t lock_err = esp_pm_lock_create(
+            ESP_PM_CPU_FREQ_MAX, 0, "insomnia", &furi_hal_power_freq_lock);
+        if(lock_err != ESP_OK) {
+            ESP_LOGW(TAG, "esp_pm_lock_create failed: %s", esp_err_to_name(lock_err));
+            furi_hal_power_freq_lock = NULL;
+        } else {
+            ESP_LOGI(TAG, "DFS enabled: 80-160 MHz");
+        }
+    }
+#endif
+
     /* Initialize shared I2C bus for power ICs (BQ27220 + BQ25896) */
 #if defined(BOARD_PIN_QWIIC_SDA) && defined(BOARD_PIN_QWIIC_SCL)
     {
@@ -338,15 +386,34 @@ uint16_t furi_hal_power_insomnia_level(void) {
 void furi_hal_power_insomnia_enter(void) {
     FURI_CRITICAL_ENTER();
     furi_check(furi_hal_power.insomnia < UINT8_MAX);
+    const bool first = (furi_hal_power.insomnia == 0);
     furi_hal_power.insomnia++;
     FURI_CRITICAL_EXIT();
+    /* Acquire outside the critical section (a frequency switch busy-waits for
+     * PLL relock). Callers pair enter/exit within the same scope, so the 0->1
+     * transition owns exactly one lock reference. */
+#if CONFIG_PM_ENABLE
+    if(first && furi_hal_power_freq_lock) {
+        esp_pm_lock_acquire(furi_hal_power_freq_lock);
+    }
+#else
+    (void)first;
+#endif
 }
 
 void furi_hal_power_insomnia_exit(void) {
     FURI_CRITICAL_ENTER();
     furi_check(furi_hal_power.insomnia > 0);
     furi_hal_power.insomnia--;
+    const bool last = (furi_hal_power.insomnia == 0);
     FURI_CRITICAL_EXIT();
+#if CONFIG_PM_ENABLE
+    if(last && furi_hal_power_freq_lock) {
+        esp_pm_lock_release(furi_hal_power_freq_lock);
+    }
+#else
+    (void)last;
+#endif
 }
 
 bool furi_hal_power_sleep_available(void) {
