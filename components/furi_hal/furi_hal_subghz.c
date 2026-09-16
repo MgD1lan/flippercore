@@ -481,6 +481,16 @@ void furi_hal_subghz_init(void) {
     furi_hal_subghz.connected = furi_hal_subghz_probe_read(&probe, true);
     furi_hal_subghz_log_probe(&probe, furi_hal_subghz.connected);
     furi_hal_subghz.state = FuriHalSubGhzStateIdle;
+
+    /* Park the radio in SPWD right away. The probe above leaves the CC1101 in
+     * IDLE (roughly 1.5-2 mA) and, until a Sub-GHz app is opened and closed,
+     * nothing else ever puts it to sleep. Every Sub-GHz app already calls
+     * furi_hal_subghz_sleep() on exit, so this is the same known-good state the
+     * chip is in after any app; apps reconfigure it from sleep on entry. The
+     * PWR_EN rail itself must stay up because it also feeds the fuel gauge. */
+    if(furi_hal_subghz.connected) {
+        furi_hal_subghz_sleep();
+    }
 }
 
 void furi_hal_subghz_sleep(void) {
