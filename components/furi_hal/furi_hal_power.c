@@ -13,6 +13,9 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
+#if CONFIG_PM_ENABLE
+#include <esp_pm.h>
+#endif
 #include <soc/soc_caps.h>
 #include <driver/i2c.h>
 #include <esp_system.h>
@@ -27,6 +30,47 @@
 #include "furi_hal_resources.h"
 
 #define TAG "FuriHalPower"
+
+#if CONFIG_PM_ENABLE
+/* Held whenever insomnia > 0. Pins the CPU at max frequency so timing-critical
+ * sections (bracketed with furi_hal_power_insomnia_enter/exit, e.g. every SPI
+ * transaction) are not slowed by dynamic frequency scaling. NULL if the lock
+ * could not be created, in which case insomnia becomes a no-op for DFS. */
+static esp_pm_lock_handle_t furi_hal_power_freq_lock = NULL;
+
+/* Master gate for automatic light sleep. Held by default so the SoC never
+ * light-sleeps; released only when idle (screen off, on battery). Even when
+ * released, IDF still only sleeps once every other lock is free (insomnia,
+ * peripheral/RMT locks, the WiFi/BT drivers' own locks). */
+static esp_pm_lock_handle_t furi_hal_power_no_ls_lock = NULL;
+static bool furi_hal_power_ls_allowed = false;
+
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+/* Optional light-sleep instrumentation. Enable CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+ * to compile it in; the exit callback runs in IDLE-task context and just bumps
+ * these counters, which furi_hal_power_get_light_sleep_stats() exposes. */
+static volatile uint32_t furi_hal_power_ls_count = 0;
+static volatile uint64_t furi_hal_power_ls_total_us = 0;
+static volatile uint32_t furi_hal_power_ls_wake_timer = 0;
+static volatile uint32_t furi_hal_power_ls_wake_gpio = 0;
+static volatile uint32_t furi_hal_power_ls_wake_other = 0;
+
+static esp_err_t furi_hal_power_ls_exit_cb(int64_t sleep_time_us, void* arg) {
+    UNUSED(arg);
+    furi_hal_power_ls_count++;
+    if(sleep_time_us > 0) furi_hal_power_ls_total_us += (uint64_t)sleep_time_us;
+    switch(esp_sleep_get_wakeup_cause()) {
+    case ESP_SLEEP_WAKEUP_TIMER: furi_hal_power_ls_wake_timer++; break;
+    case ESP_SLEEP_WAKEUP_GPIO:  furi_hal_power_ls_wake_gpio++;  break;
+    default:                     furi_hal_power_ls_wake_other++; break;
+    }
+    return ESP_OK;
+}
+static esp_pm_sleep_cbs_register_config_t furi_hal_power_ls_cbs = {
+    .exit_cb = furi_hal_power_ls_exit_cb,
+};
+#endif
+#endif
 
 #define FURI_HAL_POWER_USB_PRESENT_THRESHOLD_V  (4.6f)
 #define FURI_HAL_POWER_LOW_BATTERY_THRESHOLD_V  (3.35f)
@@ -281,6 +325,48 @@ static float furi_hal_power_get_estimated_battery_voltage(void) {
 void furi_hal_power_init(void) {
     furi_hal_power_ensure_initialized();
 
+#if CONFIG_PM_ENABLE
+    /* Dynamic frequency scaling: let the CPU idle at 80 MHz and ramp to 160 MHz
+     * only while a peripheral driver (SPI / RMT / I2C ...) or a timing-critical
+     * section (insomnia) needs it. This roughly halves idle CPU draw, which is
+     * the dominant battery sink on this port. Nothing ever lowered the fixed
+     * 160 MHz clock before.
+     *
+     * DFS 80-160 MHz plus automatic light sleep, the latter gated by the
+     * NO_LIGHT_SLEEP lock below. min_freq is 80 (not 40) so APB stays
+     * PLL-sourced and the LEDC backlight PWM and I2C timing don't shift. */
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = true,
+    };
+    esp_err_t pm_err = esp_pm_configure(&pm_config);
+    if(pm_err != ESP_OK) {
+        ESP_LOGW(TAG, "esp_pm_configure failed: %s", esp_err_to_name(pm_err));
+    } else {
+        esp_err_t lock_err = esp_pm_lock_create(
+            ESP_PM_CPU_FREQ_MAX, 0, "insomnia", &furi_hal_power_freq_lock);
+        if(lock_err != ESP_OK) {
+            ESP_LOGW(TAG, "esp_pm_lock_create failed: %s", esp_err_to_name(lock_err));
+            furi_hal_power_freq_lock = NULL;
+        }
+
+        /* Create the light-sleep gate and hold it, so nothing sleeps until the
+         * idle state (screen off, on battery) explicitly permits it. */
+        lock_err = esp_pm_lock_create(
+            ESP_PM_NO_LIGHT_SLEEP, 0, "screen_on", &furi_hal_power_no_ls_lock);
+        if(lock_err != ESP_OK) {
+            furi_hal_power_no_ls_lock = NULL;
+        } else {
+            esp_pm_lock_acquire(furi_hal_power_no_ls_lock);
+        }
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+        esp_pm_light_sleep_register_cbs(&furi_hal_power_ls_cbs);
+#endif
+        ESP_LOGI(TAG, "DFS 80-160 MHz + gated light sleep enabled");
+    }
+#endif
+
     /* Initialize shared I2C bus for power ICs (BQ27220 + BQ25896) */
 #if defined(BOARD_PIN_QWIIC_SDA) && defined(BOARD_PIN_QWIIC_SCL)
     {
@@ -338,20 +424,70 @@ uint16_t furi_hal_power_insomnia_level(void) {
 void furi_hal_power_insomnia_enter(void) {
     FURI_CRITICAL_ENTER();
     furi_check(furi_hal_power.insomnia < UINT8_MAX);
+    const bool first = (furi_hal_power.insomnia == 0);
     furi_hal_power.insomnia++;
     FURI_CRITICAL_EXIT();
+    /* Acquire outside the critical section (a frequency switch busy-waits for
+     * PLL relock). Callers pair enter/exit within the same scope, so the 0->1
+     * transition owns exactly one lock reference. */
+#if CONFIG_PM_ENABLE
+    if(first && furi_hal_power_freq_lock) {
+        esp_pm_lock_acquire(furi_hal_power_freq_lock);
+    }
+#else
+    (void)first;
+#endif
 }
 
 void furi_hal_power_insomnia_exit(void) {
     FURI_CRITICAL_ENTER();
     furi_check(furi_hal_power.insomnia > 0);
     furi_hal_power.insomnia--;
+    const bool last = (furi_hal_power.insomnia == 0);
     FURI_CRITICAL_EXIT();
+#if CONFIG_PM_ENABLE
+    if(last && furi_hal_power_freq_lock) {
+        esp_pm_lock_release(furi_hal_power_freq_lock);
+    }
+#else
+    (void)last;
+#endif
 }
 
 bool furi_hal_power_sleep_available(void) {
     return furi_hal_power.insomnia == 0;
 }
+
+bool furi_hal_power_is_running_on_battery(void) {
+    /* Only an explicit VBUS sense is trusted. Without a charger IC we can't
+     * tell USB from battery, so assume wired and never light-sleep. */
+    return furi_hal_bq25896_is_present() && !furi_hal_bq25896_is_vbus_present();
+}
+
+void furi_hal_power_allow_light_sleep(bool allow) {
+#if CONFIG_PM_ENABLE
+    if(!furi_hal_power_no_ls_lock || allow == furi_hal_power_ls_allowed) return;
+    furi_hal_power_ls_allowed = allow;
+    if(allow)
+        esp_pm_lock_release(furi_hal_power_no_ls_lock);
+    else
+        esp_pm_lock_acquire(furi_hal_power_no_ls_lock);
+#else
+    (void)allow;
+#endif
+}
+
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+void furi_hal_power_get_light_sleep_stats(FuriHalPowerLightSleepStats* out) {
+    if(!out) return;
+    out->sleep_count = furi_hal_power_ls_count;
+    out->total_sleep_us = furi_hal_power_ls_total_us;
+    out->wake_timer = furi_hal_power_ls_wake_timer;
+    out->wake_gpio = furi_hal_power_ls_wake_gpio;
+    out->wake_other = furi_hal_power_ls_wake_other;
+    out->allowed = furi_hal_power_ls_allowed;
+}
+#endif
 
 void furi_hal_power_sleep(void) {
     vTaskDelay(pdMS_TO_TICKS(1));
