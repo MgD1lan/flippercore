@@ -147,29 +147,31 @@
 #define BOARD_PIN_NFC_RST  UINT16_MAX /* no dedicated reset line on this board */
 #define BOARD_NFC_SPI_HOST SPI2_HOST
 #define BOARD_NFC_USE_ST25R3916 1
-/* TEMPORARY bring-up switch: bit-bang an I2C identity read on the shared
- * SPI pins at boot to find out whether the ST25R3916 is strapped to I2C. */
-#define BOARD_NFC_DEBUG_I2C_PROBE 1
-/* TEMPORARY bring-up switch: walk a chip select across every safe GPIO to
- * find out which pin the ST25R3916 actually listens on. */
-#define BOARD_NFC_DEBUG_CS_SCAN 1
 /* TEMPORARY bring-up switch: read IC_IDENTITY at several SPI clocks right
  * after reset to find out whether the id corruption (0x27/0x00 vs 0x2A) is a
- * clock-margin problem rather than a wrong chip. */
-#define BOARD_NFC_CHIP_ID_SWEEP 1
+ * clock-margin problem rather than a wrong chip. Costs a deinit/init cycle and
+ * ~15 ms of boot time per clock, so it stays off outside bring-up. */
+/* #define BOARD_NFC_CHIP_ID_SWEEP 1 */
 /* TEMPORARY bring-up switch: probe the ST25R3916 at the very start of
  * furi_hal_init(), before the SD card and the display have touched SPI2.
  * Tells a chip that is already dead at power-up apart from one that the boot
  * sequence (or a previous firmware run) puts into a bad state. */
 #define BOARD_NFC_EARLY_PROBE 1
+/* TEMPORARY bring-up switch: read IC_IDENTITY with plain GPIO toggling (no
+ * ESP-IDF SPI driver at all) plus a chip-select liveness check. Distinguishes
+ * "our SPI setup is wrong" from "the front-end does not answer on the bus".
+ * Runs at ~5 kHz and adds ~35 ms to boot, so enable it by hand only. */
+/* #define BOARD_NFC_BITBANG_PROBE 1 */
 
 /* Diagnostic: log a system heartbeat and one task-state dump so an intermittent
  * UI freeze can be told apart from a full system wedge in the serial log. */
-#define BOARD_HEARTBEAT_DEBUG 1
+/* #define BOARD_HEARTBEAT_DEBUG 1 */
 
 /* Diagnostic: rewrite one sector with its own contents right after mount to
- * verify the SD write path (busy-wait on an unusable MISO line). */
-#define BOARD_SD_WRITE_SELFTEST 1
+ * verify the SD write path (busy-wait on an unusable MISO line). Never enable
+ * this in a build that is handed to a user: it writes to the card on every
+ * boot. */
+/* #define BOARD_SD_WRITE_SELFTEST 1 */
 
 /* Legacy PN532/I2C macros — kept so shared code that references them still
  * compiles; the ST25R3916 front-end does not use this bus. */

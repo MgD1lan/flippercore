@@ -121,86 +121,200 @@ static void furi_hal_nfc_chip_id_sweep(void) {
 #endif
 
 #ifdef BOARD_NFC_EARLY_PROBE
+#ifdef BOARD_NFC_BITBANG_PROBE
+/* Last-resort bring-up probe: read IC_IDENTITY with plain GPIO toggling, no
+ * ESP-IDF SPI driver at all. If the chip answers here but not through
+ * furi_hal_spi_bus_trx(), the problem is in our SPI setup (mode/timing/CS);
+ * if it stays 0x00 the chip or its SPI wiring is not there, no matter what the
+ * driver does. Hand-clocked at ~5 kHz, so it also covers a marginal/failing
+ * solder joint that the hardware SPI at 4 MHz cannot. */
+static uint8_t nfc_bb_read_reg(
+    gpio_num_t cs,
+    gpio_num_t sck,
+    gpio_num_t mosi,
+    gpio_num_t miso,
+    uint8_t cmd,
+    bool cpol) {
+    gpio_set_level(cs, 1);
+    gpio_set_level(sck, cpol ? 1 : 0);
+    gpio_set_level(mosi, 0);
+    esp_rom_delay_us(500);
+    gpio_set_level(cs, 0);
+    esp_rom_delay_us(500);
+
+    for(int i = 7; i >= 0; i--) {
+        gpio_set_level(mosi, (cmd >> i) & 1);
+        esp_rom_delay_us(100);
+        gpio_set_level(sck, cpol ? 0 : 1); /* leading edge */
+        esp_rom_delay_us(100);
+        gpio_set_level(sck, cpol ? 1 : 0); /* trailing edge: slave samples MOSI */
+        esp_rom_delay_us(100);
+    }
+
+    uint8_t val = 0;
+    for(int i = 7; i >= 0; i--) {
+        gpio_set_level(sck, cpol ? 0 : 1); /* leading edge: slave shifts MISO out */
+        esp_rom_delay_us(100);
+        if(gpio_get_level(miso)) val |= (uint8_t)(1u << i);
+        gpio_set_level(sck, cpol ? 1 : 0);
+        esp_rom_delay_us(100);
+    }
+
+    gpio_set_level(cs, 1);
+    esp_rom_delay_us(500);
+    return val;
+}
+
+static void nfc_bb_probe(void) {
+    const FuriHalSpiBusHandle* handle = &furi_hal_spi_bus_handle_nfc;
+    const gpio_num_t cs = (gpio_num_t)handle->cs->pin;
+    const gpio_num_t sck = (gpio_num_t)handle->sck->pin;
+    const gpio_num_t mosi = (gpio_num_t)handle->mosi->pin;
+    const gpio_num_t miso = (gpio_num_t)handle->miso->pin;
+
+    const gpio_config_t out_cfg = {
+        .pin_bit_mask = (1ULL << cs) | (1ULL << sck) | (1ULL << mosi),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    const gpio_config_t in_cfg = {
+        .pin_bit_mask = 1ULL << miso,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&out_cfg);
+    gpio_config(&in_cfg);
+
+    gpio_set_level(cs, 1);
+    gpio_set_level(sck, 0);
+    gpio_set_level(mosi, 0);
+    furi_delay_ms(5);
+
+    /* 1) Does CS reach the chip, and is the chip powered? The ST25R3916 turns
+     * its MISO pull-down on (IO_CONF2 miso_pd1/pd2, default state) only while
+     * SS is high, i.e. while the device is NOT selected. If pulling CS low
+     * releases that pull-down and raising it brings it back, then the chip has
+     * supply and it really does see our chip select -- that part of the wiring
+     * (and the chip's IO ring) is proven good. Repeated 3x so a single glitch
+     * cannot fake it. */
+    for(int i = 1; i <= 3; i++) {
+        gpio_set_level(cs, 1);
+        furi_delay_ms(3);
+        const int cs_high = gpio_get_level(miso);
+        gpio_set_level(cs, 0);
+        furi_delay_ms(3);
+        const int cs_low = gpio_get_level(miso);
+        gpio_set_level(cs, 1);
+        furi_delay_ms(3);
+        const int cs_high_again = gpio_get_level(miso);
+        FURI_LOG_I(
+            TAG,
+            "bb cs#%d: cs_high=%d cs_low=%d again_high=%d (0,1,0 = chip saw CS)",
+            i,
+            cs_high,
+            cs_low,
+            cs_high_again);
+    }
+
+    /* 2) IC_IDENTITY (0x3F) read at ~5 kHz, both clock polarities, then once
+     * more with MISO left completely floating: a chip that drives the line
+     * cannot be confused with an MCU pull-up this way. */
+    const uint8_t mode1 = nfc_bb_read_reg(cs, sck, mosi, miso, 0x7F, false);
+    const uint8_t mode3 = nfc_bb_read_reg(cs, sck, mosi, miso, 0x7F, true);
+    gpio_set_pull_mode(miso, GPIO_FLOATING);
+    const uint8_t nopull = nfc_bb_read_reg(cs, sck, mosi, miso, 0x7F, false);
+    gpio_set_pull_mode(miso, GPIO_PULLUP_ONLY);
+
+    FURI_LOG_I(
+        TAG,
+        "bb probe: IC_IDENTITY mode1=0x%02X mode3=0x%02X nopull=0x%02X (want 0x2A)",
+        mode1,
+        mode3,
+        nopull);
+
+    /* Leave the bus in the same state furi_hal_init_early() created. */
+    gpio_set_level(sck, 0);
+    gpio_set_level(mosi, 0);
+    gpio_set_level(cs, 1);
+}
+#endif /* BOARD_NFC_BITBANG_PROBE */
+
 /* Bring-up helper: talk to the ST25R3916 as the very first thing in
  * furi_hal_init(), before the SD card and the LCD ever clock SPI2.
  *
  * The chip has no reset line on this board and keeps its state across an MCU
  * reset, so "does not answer" can mean either (a) the front-end is already in
  * a bad state at power-up, or (b) something in our own boot sequence put it
- * there. A probe that runs first separates the two, and the plain GPIO checks
- * show whether MISO is being held down by something on the shared bus. */
+ * there. A probe that runs first separates the two.
+ *
+ * Note: an idle MISO on this chip reads low by design (IO_CONF2 miso_pd1/2
+ * pull-downs), so a low MISO says nothing about the chip being alive. The only
+ * reliable liveness check is IC_IDENTITY. */
 void furi_hal_nfc_early_probe(void) {
-    FuriHalSpiBusHandle* handle = (FuriHalSpiBusHandle*)&furi_hal_spi_bus_handle_nfc;
-    const uint32_t saved_hz = handle->frequency_hz;
-    const uint8_t saved_mode = handle->mode;
+    const FuriHalSpiBusHandle* handle = &furi_hal_spi_bus_handle_nfc;
 
     /* All select lines were driven high by furi_hal_init_early(). */
     FURI_LOG_I(
         TAG,
-        "early probe: CS=%u IRQ=%u MISO=%u (all deselected)",
+        "early probe: CS=%u IRQ=%u (all select lines deselected)",
         (unsigned)gpio_nfc_cs.pin,
-        (unsigned)gpio_nfc_irq.pin,
-        (unsigned)gpio_sdcard_miso.pin);
+        (unsigned)gpio_nfc_irq.pin);
 
-    /* Does an idle MISO follow the internal pull? A line that stays low with a
-     * pull-up but does not move is actively held down by a device on the bus
-     * (the ST25R3916 keeps its own MISO pull-downs enabled out of reset). */
-    const gpio_num_t miso = (gpio_num_t)gpio_sdcard_miso.pin;
-    gpio_set_pull_mode(miso, GPIO_PULLUP_ONLY);
+    /* Supply check on IRQ. The ST25R3916 drives IRQ push-pull as soon as it is
+     * supplied, so a line that just follows the internal pull means there is no
+     * supply on the front-end (or the pin is not connected) -- something no
+     * amount of SPI work can fix. Both levels identical = the line is driven. */
+    const gpio_num_t irq = (gpio_num_t)gpio_nfc_irq.pin;
+    gpio_set_direction(irq, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(irq, GPIO_PULLUP_ONLY);
     furi_delay_ms(2);
-    const int miso_pullup = gpio_get_level(miso);
-    gpio_set_pull_mode(miso, GPIO_PULLDOWN_ONLY);
+    const int irq_pullup = gpio_get_level(irq);
+    gpio_set_pull_mode(irq, GPIO_PULLDOWN_ONLY);
     furi_delay_ms(2);
-    const int miso_pulldown = gpio_get_level(miso);
-    gpio_set_pull_mode(miso, GPIO_PULLUP_ONLY);
-    FURI_LOG_I(TAG, "early probe: MISO pullup=%d pulldown=%d", miso_pullup, miso_pulldown);
-
-    furi_hal_spi_bus_handle_init(handle);
-    if(!handle->initialized) {
-        FURI_LOG_E(TAG, "early probe: SPI device did not initialise");
-        return;
+    const int irq_pulldown = gpio_get_level(irq);
+    gpio_set_pull_mode(irq, GPIO_PULLUP_ONLY);
+    FURI_LOG_I(TAG, "early probe: IRQ pullup=%d pulldown=%d", irq_pullup, irq_pulldown);
+    if(irq_pullup != irq_pulldown) {
+        FURI_LOG_E(TAG, "early probe: IRQ follows the pull -> front-end not supplied");
     }
 
-    /* Every transfer asserts that this handle owns the bus, and acquire() is
-     * also what brings the bus up and keeps the system out of light sleep. */
+    /* Isolate the ESP-IDF SPI driver from the question "does the chip answer
+     * at all": one slow, hand-clocked read before the bus is initialised. */
+#ifdef BOARD_NFC_BITBANG_PROBE
+    nfc_bb_probe();
+#endif
+
+    /* acquire() adds the SPI device (if it is not there yet), brings the bus
+     * up and keeps the system out of light sleep for the duration. */
     furi_hal_spi_acquire(handle);
 
     st25r3916_direct_cmd(handle, ST25R3916_CMD_SET_DEFAULT);
     furi_delay_ms(5);
 
+    bool responsive = false;
+    uint8_t last_id = 0;
     for(int i = 0; i < 3; i++) {
         uint8_t id = 0;
         st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &id);
-        FURI_LOG_I(TAG, "early id mode1 4MHz[%d]=0x%02X", i, id);
+        last_id = id;
+        if((id & ST25R3916_REG_IC_IDENTITY_ic_type_mask) ==
+           ST25R3916_REG_IC_IDENTITY_ic_type_st25r3916) {
+            responsive = true;
+        }
+        FURI_LOG_I(TAG, "early id[%d]=0x%02X", i, id);
+    }
+    if(!responsive) {
+        FURI_LOG_E(TAG, "early probe: unusable IC_IDENTITY (last=0x%02X)", last_id);
     }
 
-    /* Fallbacks: wrong SPI mode and a clock the front-end cannot miss. If the
-     * chip answers only here, the normal init parameters are the problem. */
-    furi_hal_spi_bus_handle_deinit(handle);
-    handle->mode = 3;
-    furi_hal_spi_bus_handle_init(handle);
-    for(int i = 0; i < 2; i++) {
-        uint8_t id = 0;
-        st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &id);
-        FURI_LOG_I(TAG, "early id mode3 4MHz[%d]=0x%02X", i, id);
-    }
-
-    furi_hal_spi_bus_handle_deinit(handle);
-    handle->mode = 1;
-    handle->frequency_hz = 100000;
-    furi_hal_spi_bus_handle_init(handle);
-    for(int i = 0; i < 2; i++) {
-        uint8_t id = 0;
-        st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &id);
-        FURI_LOG_I(TAG, "early id mode1 100kHz[%d]=0x%02X", i, id);
-    }
-
-    furi_hal_spi_bus_handle_deinit(handle);
-    handle->frequency_hz = saved_hz;
-    handle->mode = saved_mode;
-    furi_hal_spi_bus_handle_init(handle);
-    furi_hal_spi_bus_handle_deinit(handle);
-
+    /* The handle stays registered on purpose: a registered SPI device keeps
+     * its CS driven high between transactions, while remove_device() would
+     * hand the line over to a ~45k pull-up right before the SD card and the
+     * display start clocking the same bus at 10-40 MHz. */
     furi_hal_spi_release(handle);
 }
 #endif
@@ -248,13 +362,11 @@ FuriHalNfcError furi_hal_nfc_init(void) {
         }
 
         const FuriHalSpiBusHandle* handle = &furi_hal_spi_bus_handle_nfc;
-        /* Re-create our device handle once before the first transfer. On the
-         * shared bus the ESP-IDF host is brought up by whichever module runs
-         * first, so a handle added during that window can end up clocking
-         * nothing (the chip then leaves MISO floating and every read is
-         * noise). A fresh add_device() after the bus is fully configured is
-         * cheap and always correct. */
-        furi_hal_spi_bus_handle_deinit(handle);
+        /* The device is normally added by the early probe. Re-check it here as
+         * well so a build without BOARD_NFC_EARLY_PROBE still works, but do
+         * not tear the handle down and re-add it: on a shared bus that hands
+         * CS to a weak pull-up for a moment while the LCD and the SD card keep
+         * clocking. */
         furi_hal_spi_bus_handle_init(handle);
         if(!handle->initialized) {
             FURI_LOG_E(TAG, "init: NFC SPI device did not initialise");
