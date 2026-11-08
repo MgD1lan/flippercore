@@ -161,12 +161,21 @@
  * furi_hal_init(), before the SD card and the display have touched SPI2.
  * Tells a chip that is already dead at power-up apart from one that the boot
  * sequence (or a previous firmware run) puts into a bad state. */
-#define BOARD_NFC_EARLY_PROBE 1
+/* #define BOARD_NFC_EARLY_PROBE 1 */
 /* TEMPORARY bring-up switch: read IC_IDENTITY with plain GPIO toggling (no
  * ESP-IDF SPI driver at all) plus a chip-select liveness check. Distinguishes
  * "our SPI setup is wrong" from "the front-end does not answer on the bus".
  * Runs at ~5 kHz and adds ~35 ms to boot, so enable it by hand only. */
 /* #define BOARD_NFC_BITBANG_PROBE 1 */
+/* TEMPORARY bring-up switch: when the chip id read fails, check whether the
+ * chip executes commands at all by watching its IRQ line for the "direct
+ * command termination" and "oscillator stable" events. A working MISO is not
+ * needed for either. Runs once, only on the failing path (~45 ms). */
+/* #define BOARD_NFC_EXEC_PROBE 1 */
+/* TEMPORARY bring-up switch: measure the IRQ pin voltage with the internal
+ * pull-up enabled to tell an actively driven low line from one that is merely
+ * held by a resistor. Answers "is the front-end powered at all". */
+/* #define BOARD_NFC_IRQ_ADC_PROBE 1 */
 
 /* Diagnostic: log a system heartbeat and one task-state dump so an intermittent
  * UI freeze can be told apart from a full system wedge in the serial log. */

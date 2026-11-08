@@ -62,34 +62,151 @@ static FuriHalNfcError furi_hal_nfc_turn_on_osc(const FuriHalSpiBusHandle* handl
     return error;
 }
 
-/* Read the IC_IDENTITY register until it reports the ST25R3916 type, or give
- * up. The front-end shares SPI2 with the LCD/SD/nRF24 and its first register
- * read after SET_DEFAULT occasionally returns a corrupted byte (observed: 0x27
- * instead of 0x2A on the same board), which used to abort NFC init with
- * "Wrong chip id" and left the app showing "NFC Chip Failed". A handful of
- * retries with a short settle delay makes the init reliable. */
-#define FURI_HAL_NFC_CHIP_ID_RETRIES 8
+/* Chip identification for the ST25R3916.
+ *
+ * This front-end has no reset line on the fatalcore board and keeps its
+ * register state across an MCU reset, so it can be found in any state a
+ * previous firmware run left behind. In particular, when OP_CONTROL.en is
+ * clear the 27.12 MHz oscillator is stopped and IC_IDENTITY reads back as
+ * 0x00 (or a stale byte) even though the chip is perfectly alive. The old
+ * init read the id first and gave up, which is why NFC reported
+ * "NFC Chip Failed" while a Bruce build on the same board read 0x2A.
+ *
+ * Evidence from the failing board: the first read returned 0x10 with
+ * OP_CONTROL = 0x00; after forcing the oscillator on, the same read returned
+ * 0x2A and IO_CONF2 read back as 0x04.
+ *
+ * So the sequence is: SET_DEFAULT, restore the IO driver strength, start the
+ * oscillator and wait for osc_ok, then read the type. Each retry also
+ * re-creates the ESP-IDF SPI device, because the display driver re-initialises
+ * the shared host after the early probe and can leave our device handle in a
+ * state where transactions go nowhere. */
+#define FURI_HAL_NFC_CHIP_ID_RETRIES 5
+#define FURI_HAL_NFC_OSC_SETTLE_MS   40
 
+/* Start the oscillator without relying on a readable MISO or on the GPIO IRQ
+ * handler (which is not installed yet at this point). The write goes straight
+ * to OP_CONTROL instead of a read-modify-write, because readback is exactly
+ * what is not trustworthy on a chip that has not answered yet. */
+static bool furi_hal_nfc_osc_wake(const FuriHalSpiBusHandle* handle, uint8_t* aux_out) {
+    st25r3916_write_reg(handle, ST25R3916_REG_OP_CONTROL, ST25R3916_REG_OP_CONTROL_en);
+
+    uint8_t aux = 0;
+    for(uint32_t waited = 0; waited <= FURI_HAL_NFC_OSC_SETTLE_MS; waited += 5) {
+        furi_delay_ms(5);
+        aux = 0;
+        st25r3916_read_reg(handle, ST25R3916_REG_AUX_DISPLAY, &aux);
+        if(aux & ST25R3916_REG_AUX_DISPLAY_osc_ok) break;
+    }
+
+    if(aux_out) *aux_out = aux;
+    return (aux & ST25R3916_REG_AUX_DISPLAY_osc_ok) != 0;
+}
+
+static bool furi_hal_nfc_chip_id_matches(uint8_t chip_id) {
+    const uint8_t type = chip_id & ST25R3916_REG_IC_IDENTITY_ic_type_mask;
+    return type == ST25R3916_REG_IC_IDENTITY_ic_type_st25r3916 ||
+           type == ST25R3916_REG_IC_IDENTITY_ic_type_st25r3916b;
+}
+
+/* Non-destructive variant used by furi_hal_nfc_is_hal_ready(): read the type,
+ * and if the chip looks asleep just start its oscillator. No SET_DEFAULT here,
+ * because that would throw away the register configuration that
+ * furi_hal_nfc_init() already applied. */
 static bool furi_hal_nfc_read_chip_id(const FuriHalSpiBusHandle* handle, uint8_t* chip_id_out) {
+    uint8_t chip_id = 0;
+    st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &chip_id);
+
+    if(!furi_hal_nfc_chip_id_matches(chip_id)) {
+        uint8_t aux = 0;
+        if(furi_hal_nfc_osc_wake(handle, &aux)) {
+            st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &chip_id);
+        }
+    }
+
+    *chip_id_out = chip_id;
+    return furi_hal_nfc_chip_id_matches(chip_id);
+}
+
+static bool furi_hal_nfc_identify_chip(
+    const FuriHalSpiBusHandle* handle,
+    uint8_t* chip_id_out) {
+    FuriHalSpiBusHandle* mutable_handle = (FuriHalSpiBusHandle*)handle;
     uint8_t last_id = 0;
 
     for(int attempt = 0; attempt < FURI_HAL_NFC_CHIP_ID_RETRIES; attempt++) {
+        if(attempt == 0) {
+            /* Record the state the chip was left in by whatever ran before
+             * (previous firmware boot, Bruce, or nothing): it keeps registers
+             * across MCU resets and has no reset line here, so this is the
+             * only way to tell "was asleep" from "was woken up". */
+            uint8_t raw_id = 0;
+            uint8_t op = 0;
+            st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &raw_id);
+            st25r3916_read_reg(handle, ST25R3916_REG_OP_CONTROL, &op);
+            FURI_LOG_I(
+                TAG,
+                "init: before reset: OP_CONTROL=0x%02X IC_IDENTITY=0x%02X",
+                op,
+                raw_id);
+        }
+
+        if(attempt > 0) {
+            /* Start the retry from a fresh SPI device: remove_device() also
+             * parks CS high instead of leaving it floating for the other
+             * devices on the shared bus. */
+            furi_hal_spi_bus_handle_deinit(mutable_handle);
+            furi_hal_spi_bus_handle_init(mutable_handle);
+            if(!mutable_handle->initialized) {
+                FURI_LOG_W(TAG, "init: attempt %d: SPI device not initialised", attempt);
+                continue;
+            }
+        }
+
+        st25r3916_direct_cmd(handle, ST25R3916_CMD_SET_DEFAULT);
+        furi_delay_ms(5);
+        /* Increase IO driver strength of MISO and IRQ. */
+        st25r3916_write_reg(handle, ST25R3916_REG_IO_CONF2, ST25R3916_REG_IO_CONF2_io_drv_lvl);
+
+        uint8_t aux = 0;
+        const bool osc_ok = furi_hal_nfc_osc_wake(handle, &aux);
+
         uint8_t chip_id = 0;
         st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &chip_id);
         last_id = chip_id;
 
-        if((chip_id & ST25R3916_REG_IC_IDENTITY_ic_type_mask) ==
-           ST25R3916_REG_IC_IDENTITY_ic_type_st25r3916) {
+        uint8_t io2 = 0;
+        st25r3916_read_reg(handle, ST25R3916_REG_IO_CONF2, &io2);
+
+        FURI_LOG_I(
+            TAG,
+            "init: attempt %d: io2=0x%02X osc_ok=%d aux=0x%02X IC_IDENTITY=0x%02X",
+            attempt,
+            io2,
+            (int)osc_ok,
+            aux,
+            chip_id);
+
+        if(furi_hal_nfc_chip_id_matches(chip_id)) {
             *chip_id_out = chip_id;
             return true;
         }
-
-        /* Wait for the chip's oscillator/supply to settle and retry. */
-        furi_delay_ms(2);
     }
 
     *chip_id_out = last_id;
     return false;
+}
+
+/* Tear down the NFC runtime after a failed bring-up, but leave the front-end
+ * oscillator running. furi_hal_nfc_low_power_mode_start() clears OP_CONTROL.en,
+ * and on this board (no reset line, state survives MCU resets) that turns one
+ * bad boot into a permanent state: the next boot finds the chip asleep again
+ * and fails identically, reflash after reflash. */
+static void furi_hal_nfc_deinit_keep_osc(const FuriHalSpiBusHandle* handle) {
+    st25r3916_write_reg(handle, ST25R3916_REG_OP_CONTROL, ST25R3916_REG_OP_CONTROL_en);
+    furi_hal_nfc_deinit_gpio_isr();
+    furi_hal_nfc_timers_deinit();
+    furi_hal_nfc_event_stop();
 }
 
 #ifdef BOARD_NFC_CHIP_ID_SWEEP
@@ -119,6 +236,228 @@ static void furi_hal_nfc_chip_id_sweep(void) {
     furi_hal_spi_bus_handle_init(handle);
 }
 #endif
+
+#ifdef BOARD_NFC_IRQ_ADC_PROBE
+/* Bring-up helper: is the IRQ line actively driven, or just held low by a
+ * resistor? The digital pull-up/pull-down test cannot tell the two apart, the
+ * ADC can: with the internal ~45k pull-up enabled, a chip that drives IRQ low
+ * reads ~0 V, a plain 10k pull-down resistor reads ~0.6 V and an open pin
+ * reads ~3.3 V. The IRQ pin is ADC2_CH1 on the ESP32-S3.
+ *
+ * A resistor that wins over the pull-up also means the chip is not driving
+ * the line -- i.e. either no supply on the front-end or a broken trace. */
+#include <esp_adc/adc_oneshot.h>
+
+static int nfc_irq_read_mv(adc_oneshot_unit_handle_t unit, adc_channel_t ch) {
+    int raw = 0;
+    int acc = 0;
+    for(int i = 0; i < 16; i++) {
+        if(adc_oneshot_read(unit, ch, &raw) != ESP_OK) return -1;
+        acc += raw;
+    }
+    /* 12 dB attenuation, 12 bit: roughly 3.1 V full scale. */
+    return (acc / 16) * 3100 / 4095;
+}
+
+static void furi_hal_nfc_irq_adc_probe(void) {
+    const gpio_num_t irq = (gpio_num_t)gpio_nfc_irq.pin;
+    adc_unit_t unit = ADC_UNIT_1;
+    adc_channel_t ch = ADC_CHANNEL_0;
+    if(adc_oneshot_io_to_channel((int)irq, &unit, &ch) != ESP_OK) {
+        FURI_LOG_E(TAG, "irq adc: GPIO%u is not an ADC pin", (unsigned)irq);
+        return;
+    }
+
+    adc_oneshot_unit_handle_t adc = NULL;
+    const adc_oneshot_unit_init_cfg_t unit_cfg = {.unit_id = unit};
+    if(adc_oneshot_new_unit(&unit_cfg, &adc) != ESP_OK) {
+        FURI_LOG_E(TAG, "irq adc: unit init failed");
+        return;
+    }
+    const adc_oneshot_chan_cfg_t ch_cfg = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    adc_oneshot_config_channel(adc, ch, &ch_cfg);
+
+    gpio_set_direction(irq, GPIO_MODE_INPUT);
+    const struct {
+        gpio_pull_mode_t mode;
+        const char* name;
+    } steps[] = {
+        {GPIO_FLOATING, "float"},
+        {GPIO_PULLUP_ONLY, "pullup"},
+        {GPIO_PULLDOWN_ONLY, "pulldown"},
+    };
+    int mv[3];
+    for(size_t i = 0; i < 3; i++) {
+        gpio_set_pull_mode(irq, steps[i].mode);
+        furi_delay_ms(2);
+        mv[i] = nfc_irq_read_mv(adc, ch);
+        FURI_LOG_I(
+            TAG, "irq adc: %s=%dmV", steps[i].name, mv[i]);
+    }
+    gpio_set_pull_mode(irq, GPIO_PULLUP_ONLY);
+
+    if(mv[1] < 100) {
+        FURI_LOG_I(TAG, "irq adc: line is ACTIVELY DRIVEN low -> front-end is powered");
+    } else if(mv[1] < 2500) {
+        FURI_LOG_E(
+            TAG,
+            "irq adc: line is held by a resistor (%dmV under a ~45k pull-up) "
+            "-> front-end does NOT drive it (no supply or broken trace)",
+            mv[1]);
+    } else {
+        FURI_LOG_E(TAG, "irq adc: line floats -> IRQ pin not connected to anything");
+    }
+
+    adc_oneshot_del_unit(adc);
+
+    /* Sanity check for the measurement itself: the IR receiver output is an
+     * external push-pull driver that idles high. If this pin does not read a
+     * few volts, the ADC path is broken and the IRQ numbers above mean
+     * nothing. */
+    adc_unit_t s_unit = ADC_UNIT_1;
+    adc_channel_t s_ch = ADC_CHANNEL_0;
+    const gpio_num_t sanity = (gpio_num_t)BOARD_PIN_IR_RX;
+    if(adc_oneshot_io_to_channel((int)sanity, &s_unit, &s_ch) == ESP_OK) {
+        adc_oneshot_unit_handle_t s_adc = NULL;
+        const adc_oneshot_unit_init_cfg_t s_unit_cfg = {.unit_id = s_unit};
+        if(adc_oneshot_new_unit(&s_unit_cfg, &s_adc) == ESP_OK) {
+            adc_oneshot_config_channel(s_adc, s_ch, &ch_cfg);
+            FURI_LOG_I(
+                TAG,
+                "irq adc: sanity GPIO%u (IR RX, idles high) = %dmV",
+                (unsigned)sanity,
+                nfc_irq_read_mv(s_adc, s_ch));
+            adc_oneshot_del_unit(s_adc);
+        }
+    }
+}
+#endif /* BOARD_NFC_IRQ_ADC_PROBE */
+
+#ifdef BOARD_NFC_EXEC_PROBE
+/* Bring-up helper: answer "does the chip execute what we send it?" without
+ * needing a readable MISO.
+ *
+ * The ST25R3916 drives its IRQ line push-pull (we already measured that: the
+ * pin is actively held low when idle) and latches interrupt events that we can
+ * select through the IRQ mask registers. Two events need no RF field:
+ *
+ *  - DCT ("direct command termination"): raised when a direct command with a
+ *    defined duration finishes. Uses the chip's internal RC oscillator, so it
+ *    works even with a dead 27.12 MHz crystal.
+ *  - OSC (oscillator stable): raised when the 27.12 MHz crystal oscillator has
+ *    started after the `en` bit is set.
+ *
+ * If DCT fires, chip select, clock, data-in, supply and the chip core all
+ * work, and only the data-out (MISO) path is broken. If DCT does not fire,
+ * the commands never reach the chip (CS/SCK/MOSI open, no supply) or the
+ * core is dead. OSC then tells a working crystal apart from a dead one.
+ *
+ * IRQ is active high and driven low when idle. The whole probe is polled, so
+ * it works before the GPIO interrupt handler is installed.
+ */
+static bool nfc_exec_wait_irq(gpio_num_t irq, uint32_t timeout_ms, uint32_t* waited_us) {
+    uint32_t waited = 0;
+    const uint32_t timeout = timeout_ms * 1000U;
+    while(waited < timeout && gpio_get_level(irq) == 0) {
+        esp_rom_delay_us(50);
+        waited += 50;
+    }
+    *waited_us = waited;
+    return gpio_get_level(irq) != 0;
+}
+
+static void furi_hal_nfc_exec_probe(const FuriHalSpiBusHandle* handle) {
+    const gpio_num_t irq = (gpio_num_t)gpio_nfc_irq.pin;
+    const gpio_config_t irq_cfg = {
+        .pin_bit_mask = 1ULL << irq,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&irq_cfg);
+
+    const int idle = gpio_get_level(irq);
+
+    /* Known state, then mask everything. Register value 1 = masked. */
+    st25r3916_direct_cmd(handle, ST25R3916_CMD_SET_DEFAULT);
+    furi_delay_ms(5);
+    st25r3916_mask_irq(handle, ST25R3916_IRQ_MASK_ALL);
+    const int after_default = gpio_get_level(irq);
+
+    /* --- Test 1: direct command termination, no crystal required. --- */
+    st25r3916_mask_irq(handle, ~ST25R3916_IRQ_MASK_DCT);
+    st25r3916_direct_cmd(handle, ST25R3916_CMD_ADJUST_REGULATORS);
+    uint32_t dct_us = 0;
+    const bool dct_irq = nfc_exec_wait_irq(irq, 20, &dct_us);
+    st25r3916_mask_irq(handle, ST25R3916_IRQ_MASK_ALL);
+    furi_delay_ms(1);
+    const int after_dct_clear = gpio_get_level(irq);
+    st25r3916_direct_cmd(handle, ST25R3916_CMD_CLEAR_FIFO);
+    furi_delay_ms(1);
+
+    /* --- Test 2: crystal oscillator start. --- */
+    st25r3916_mask_irq(handle, ~ST25R3916_IRQ_MASK_OSC);
+    /* Direct write instead of read-modify-write: MISO may be dead. */
+    st25r3916_write_reg(handle, ST25R3916_REG_OP_CONTROL, ST25R3916_REG_OP_CONTROL_en);
+    uint32_t osc_us = 0;
+    const bool osc_irq = nfc_exec_wait_irq(irq, 20, &osc_us);
+
+    uint8_t aux = 0;
+    st25r3916_read_reg(handle, ST25R3916_REG_AUX_DISPLAY, &aux);
+    st25r3916_mask_irq(handle, ST25R3916_IRQ_MASK_ALL);
+
+    FURI_LOG_I(
+        TAG,
+        "exec probe: irq idle=%d after_default=%d after_dct=%d dct_irq=%d dct_us=%lu "
+        "osc_irq=%d osc_us=%lu aux=0x%02X",
+        idle,
+        after_default,
+        after_dct_clear,
+        (int)dct_irq,
+        (unsigned long)dct_us,
+        (int)osc_irq,
+        (unsigned long)osc_us,
+        aux);
+
+    if(dct_irq) {
+        FURI_LOG_W(
+            TAG,
+            "exec probe: chip EXECUTES commands -> supply/core/CS/SCK/MOSI are OK, "
+            "fault is data-out (MISO) %s",
+            osc_irq ? "or a chip register state; crystal runs" : "and/or the crystal is dead");
+    } else {
+        FURI_LOG_E(
+            TAG,
+            "exec probe: no DCT -> chip does not execute commands "
+            "(no supply, CS/SCK/MOSI open, or core dead)");
+    }
+
+    /* Leave the oscillator running. Writing 0 here puts the chip to sleep, and
+     * because it has no reset line and keeps state across MCU resets the next
+     * boot then looks exactly like a dead chip. */
+    st25r3916_write_reg(handle, ST25R3916_REG_OP_CONTROL, ST25R3916_REG_OP_CONTROL_en);
+
+    /* Can the IRQ output drive the line high at all? With the internal pull-up
+     * enabled a pin that still reads 0 is either actively driven low by the
+     * chip or shorted to ground; a floating or released line follows the
+     * pull-up. */
+    const gpio_config_t irq_pullup_cfg = {
+        .pin_bit_mask = 1ULL << irq,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&irq_pullup_cfg);
+    furi_delay_ms(1);
+    FURI_LOG_I(TAG, "exec probe: irq with internal pull-up=%d", gpio_get_level(irq));
+    gpio_set_direction(irq, GPIO_MODE_INPUT);
+}
+#endif /* BOARD_NFC_EXEC_PROBE */
 
 #ifdef BOARD_NFC_EARLY_PROBE
 #ifdef BOARD_NFC_BITBANG_PROBE
@@ -281,6 +620,9 @@ void furi_hal_nfc_early_probe(void) {
     if(irq_pullup != irq_pulldown) {
         FURI_LOG_E(TAG, "early probe: IRQ follows the pull -> front-end not supplied");
     }
+#ifdef BOARD_NFC_IRQ_ADC_PROBE
+    furi_hal_nfc_irq_adc_probe();
+#endif
 
     /* Isolate the ESP-IDF SPI driver from the question "does the chip answer
      * at all": one slow, hand-clocked read before the bus is initialised. */
@@ -309,6 +651,11 @@ void furi_hal_nfc_early_probe(void) {
     }
     if(!responsive) {
         FURI_LOG_E(TAG, "early probe: unusable IC_IDENTITY (last=0x%02X)", last_id);
+#ifdef BOARD_NFC_EXEC_PROBE
+        /* The chip is not answering on MISO. Ask the one question that does
+         * not need MISO: is it executing our commands at all? */
+        furi_hal_nfc_exec_probe(handle);
+#endif
     }
 
     /* The handle stays registered on purpose: a registered SPI device keeps
@@ -375,20 +722,12 @@ FuriHalNfcError furi_hal_nfc_init(void) {
             furi_hal_nfc_release();
             break;
         }
-        // Set default state
-        st25r3916_direct_cmd(handle, ST25R3916_CMD_SET_DEFAULT);
-        /* The chip needs a moment after SET_DEFAULT before registers are
-         * readable again (the first read otherwise returns a stale/corrupt
-         * IC_IDENTITY byte). */
-        furi_delay_ms(5);
-        // Increase IO driver strength of MISO and IRQ
-        st25r3916_write_reg(handle, ST25R3916_REG_IO_CONF2, ST25R3916_REG_IO_CONF2_io_drv_lvl);
+        // Set default state, start the oscillator and check the chip type
 #ifdef BOARD_NFC_CHIP_ID_SWEEP
         furi_hal_nfc_chip_id_sweep();
 #endif
-        // Check chip ID (with retries: see furi_hal_nfc_read_chip_id)
         uint8_t chip_id = 0;
-        bool id_ok = furi_hal_nfc_read_chip_id(handle, &chip_id);
+        const bool id_ok = furi_hal_nfc_identify_chip(handle, &chip_id);
         FURI_LOG_I(
             TAG,
             "init: IC_IDENTITY=0x%02X (want mask 0x%02X = 0x%02X)",
@@ -397,8 +736,11 @@ FuriHalNfcError furi_hal_nfc_init(void) {
             ST25R3916_REG_IC_IDENTITY_ic_type_st25r3916);
         if(!id_ok) {
             FURI_LOG_E(TAG, "Wrong chip id");
+#ifdef BOARD_NFC_EXEC_PROBE
+            furi_hal_nfc_exec_probe(handle);
+#endif
             error = FuriHalNfcErrorCommunication;
-            furi_hal_nfc_low_power_mode_start();
+            furi_hal_nfc_deinit_keep_osc(handle);
             furi_hal_nfc_release();
             break;
         }
@@ -413,7 +755,7 @@ FuriHalNfcError furi_hal_nfc_init(void) {
 
         error = furi_hal_nfc_turn_on_osc(handle);
         if(error != FuriHalNfcErrorNone) {
-            furi_hal_nfc_low_power_mode_start();
+            furi_hal_nfc_deinit_keep_osc(handle);
             furi_hal_nfc_release();
             break;
         }
