@@ -18,6 +18,7 @@ declare -A TARGETS=(
     ["waveshare_c6_1.9"]="esp32c6"
     ["waveshare_c6_1.47"]="esp32c6"
     ["t_embed"]="esp32s3"
+    ["fatalcore"]="esp32s3"
     ["paradoxt"]="esp32s3"
 )
 declare -A NAMES=(
@@ -26,6 +27,7 @@ declare -A NAMES=(
     ["waveshare_c6_1.9"]="waveshare_c6_1.9"
     ["waveshare_c6_1.47"]="waveshare_c6_1.47"
     ["t_embed"]="lilygo_t_embed_cc1101"
+    ["fatalcore"]="fatalcore"
     ["paradoxt"]="paradoxt"
 )
 declare -A DIRS=(
@@ -34,13 +36,14 @@ declare -A DIRS=(
     ["waveshare_c6_1.9"]="build_waveshare_c6"
     ["waveshare_c6_1.47"]="build_waveshare_c6_1.47"
     ["t_embed"]="build_t_embed"
+    ["fatalcore"]="build_fatalcore"
     ["paradoxt"]="build_paradoxt"
 )
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") --board <name> [options]
-Boards: esp32s3, waveshare_c6, waveshare_c6_1.9, waveshare_c6_1.47, t_embed, paradoxt
+Boards: esp32s3, waveshare_c6, waveshare_c6_1.9, waveshare_c6_1.47, t_embed, fatalcore, paradoxt
 Options: -p|--port, -m|--monitor, --build-only
 EOF
 }
