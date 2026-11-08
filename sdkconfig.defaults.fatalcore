@@ -149,3 +149,10 @@ CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
 CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=64
 CONFIG_ESP_COREDUMP_STACK_SIZE=2048
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH_TIMEOUT=0
+
+# ---------------------------------------------------------------------------
+# CPU clock: the hardware-validated image runs at 240 MHz. Keep it in the
+# defaults so a clean CI build (which starts without a root sdkconfig) does
+# not silently fall back to the 160 MHz IDF default and ship a slower image.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
