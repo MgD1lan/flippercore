@@ -49,6 +49,13 @@
 #define BOARD_PIN_BUTTON_RIGHT  BOARD_PIN_BTN_RIGHT
 #define BOARD_PIN_ENCODER_BTN   BOARD_PIN_BTN_OK
 
+/* Real 4-way D-pad with separate Up/Down/Left/Right buttons, not the T-Embed
+ * 1-axis encoder: disable the encoder adaptations in the GUI (arrow remapping
+ * in ViewInputModeLeftRight views, the on-screen keyboard transpose and the
+ * "press Ok to edit" dance in variable_item_list) so every arrow means what
+ * it says, including in the text input keyboard. */
+#define BOARD_INPUT_DPAD 1
+
 /* No battery ADC — the pack is monitored through the INA219 on I2C. */
 #define BOARD_PIN_BATTERY_ADC   UINT16_MAX
 

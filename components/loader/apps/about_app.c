@@ -25,6 +25,8 @@ int32_t about_app(void* p) {
     app->view_dispatcher = view_dispatcher_alloc();
     app->widget = widget_alloc();
 
+    /* Order matches the stock firmware: firmware name, device name, firmware
+     * version. */
     widget_add_string_multiline_element(
         app->widget,
         64,
@@ -32,7 +34,7 @@ int32_t about_app(void* p) {
         AlignCenter,
         AlignTop,
         FontPrimary,
-        FURI_ESP32_DEVICE_NAME);
+        FURI_ESP32_VERSION_NAME);
 
     widget_add_string_multiline_element(
         app->widget,
@@ -41,8 +43,8 @@ int32_t about_app(void* p) {
         AlignCenter,
         AlignTop,
         FontSecondary,
-        "ESP32-S3 port\n"
-        "FW: " FURI_ESP32_VERSION_FULL);
+        FURI_ESP32_DEVICE_NAME "\n"
+        "FW: " FURI_ESP32_VERSION);
 
     View* widget_view = widget_get_view(app->widget);
     view_set_previous_callback(widget_view, about_app_exit);
