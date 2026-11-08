@@ -723,9 +723,10 @@ bool furi_hal_power_is_charging(void) {
         return furi_hal_bq27220_is_charging();
     }
     /* No charger IC on TP4056 boards: current flowing into the pack means the
-     * charger is active. A small threshold rejects INA219 offset noise. */
+     * charger is active. Fatal Core's INA219 shunt is wired with the opposite
+     * polarity, so charging current reads negative here. */
     if(furi_hal_ina219_is_present()) {
-        return furi_hal_ina219_get_current_ma() > 20;
+        return furi_hal_ina219_get_current_ma() < -20;
     }
     furi_hal_power_refresh_sample();
     return furi_hal_power_is_usb_present() && (furi_hal_power.suppress_charge == 0);

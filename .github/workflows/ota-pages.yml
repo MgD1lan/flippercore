@@ -1,0 +1,80 @@
+name: Build & Publish OTA (Fatal Core)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'fatalcore-v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ota-pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ESP-IDF 5.4.1
+        uses: espressif/install-esp-idf-action@v1
+        with:
+          version: v5.4.1
+          target: esp32s3
+
+      - name: Read firmware version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(grep -oP '#define\s+FURI_ESP32_VERSION\s+"\K[^"]+' components/toolbox/fw_version.h)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Firmware version: $V"
+
+      - name: Build Fatal Core
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py -B build_fatalcore -DFLIPPER_BOARD=fatalcore build
+
+      - name: Prepare OTA payload
+        shell: bash
+        run: |
+          mkdir -p ota/latest
+          cp build_fatalcore/furi_esp32.bin ota/latest/furi_esp32.bin
+          printf '%s\n' '${{ steps.ver.outputs.version }}' > ota/latest/version.txt
+          cp build_fatalcore/bootloader/bootloader.bin ota/latest/
+          cp build_fatalcore/partition_table/partition-table.bin ota/latest/
+          cp build_fatalcore/ota_data_initial.bin ota/latest/
+          ls -la ota/latest
+
+      - name: Publish to gh-pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages || true
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git checkout -B gh-pages origin/gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          # Keep only the published OTA tree on the branch.
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name ota -exec rm -rf {} +
+          mv ota/latest ./latest
+          rmdir ota
+          git add -A
+          git commit -m "OTA ${GITHUB_REF_NAME:-manual} (${GITHUB_SHA::7})" || echo "no changes"
+          git push origin gh-pages
