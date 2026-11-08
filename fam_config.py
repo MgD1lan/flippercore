@@ -8,6 +8,8 @@ MANIFEST_ROOTS = [
 
 APP_SOURCE_OVERRIDES = {
     "desktop": "applications",
+    # components/desktop_settings is an ESP32 stub; use the complete PIN/settings app.
+    "desktop_settings": "applications",
     "storage": "applications",
 }
 
@@ -30,6 +32,7 @@ APPS = [
     "spoofing_settings",
     "notification_settings",
     "interface_settings",
+    "desktop_settings",
     "desktop",
     "archive",
     "about",
@@ -45,6 +48,8 @@ APPS = [
     "passport",
     "nfc",
     "infrared",
+    # "gpio" (USB-UART bridge, manual GPIO control, 5V/VBUS switch) removed:
+    # not useful on the T-Embed hardware. Re-add here to build the app again.
     # "lfrfid" (125 kHz RFID) disabled: no currently supported board has the
     # LF-RFID hardware. Re-add here to build the app again.
     "wlan",
@@ -83,6 +88,15 @@ APPS = [
 
 # Boards without NFC / IR hardware – exclude the corresponding apps
 _board = os.environ.get("FLIPPER_BOARD", "")
+# NOTE: furi_hal_usb_u2f.c is only built for esp32s3. "smoochie" was removed
+# here because it is not a real board in this tree (no board_smoochie.h, no
+# sdkconfig.defaults.smoochie) and therefore not an esp32s3 target.
+_boards_with_u2f = {
+    "esp32s3_generic",
+    "lilygo_t_embed_cc1101",
+    "paradoxt",
+    "thormini",
+}
 _boards_without_nfc = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}
 _boards_without_ir = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}
 
@@ -94,6 +108,9 @@ _boards_without_wolf3d = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47
 if _board in _boards_without_nfc:
     APPS = [a for a in APPS if a != "nfc"]
 
+if _board in _boards_with_u2f:
+    APPS.append("u2f")
+
 # waveshare_c6_1.9: external CC1101 module wired up (pins in board_waveshare_c6_1.9.h,
 # BOARD_HAS_SUBGHZ=1) → SubGHz built in. 1.47 has no module → stays excluded.
 _boards_without_subghz = {"waveshare_c6_1.47"}
@@ -104,6 +121,10 @@ _boards_without_nrf24 = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"
 
 if _board in _boards_without_ir:
     APPS = [a for a in APPS if a not in ("infrared", "js_infrared")]
+
+# GPIO app (USB-UART bridge, GPIO manual control, 5V/VBUS switch) is not built on
+# any board. Non-S3 boards keep their 5V switch in Infrared -> GPIO Settings
+# (see INFRARED_HAS_5V_SETTINGS in applications/main/infrared/infrared_app_i.h).
 
 if _board in _boards_without_subghz:
     APPS = [a for a in APPS if a not in ("subghz", "cli_subghz", "subghz_load_dangerous_settings", "js_subghz")]

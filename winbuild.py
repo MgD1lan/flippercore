@@ -48,14 +48,21 @@ BOARDS = {
     "waveshare_c6_1.47": ("waveshare_c6_1.47",     "esp32c6", "build_waveshare_c6_1.47"),
     "thormini":          ("thormini",              "esp32s3", "build_thormini"),
     "thorchimera":       ("thorchimera",           "esp32s3", "build_thorchimera"),
-    "fatalcore":         ("fatalcore",             "esp32s3", "build_fatalcore"),
+"fatalcore":         ("fatalcore",             "esp32s3", "build_fatalcore"),
+    "paradoxt":          ("paradoxt",              "esp32s3", "build_paradoxt"),
+    "m5stick_s3":        ("m5stick_s3",            "esp32s3", "build_m5stick_s3"),
+    "cardputer_adv":     ("m5stack_cardputer_adv", "esp32s3", "build_cardputer_adv"),
+    "m5stack_cardputer_adv": ("m5stack_cardputer_adv", "esp32s3", "build_cardputer_adv"),
 }
 
 REPO_ROOT = Path(__file__).resolve().parent
 
 
 def _board_cmake_args(flipper_board: str, build_dir: str) -> str:
-    args = f"-B {build_dir} -DFLIPPER_BOARD={flipper_board}"
+    # Each board keeps its own sdkconfig inside its build dir. A shared root
+    # sdkconfig would carry one board's choices (e.g. dual-core on T-Embed /
+    # paradoxt) into another board's build.
+    args = f"-B {build_dir} -DFLIPPER_BOARD={flipper_board} -DSDKCONFIG={build_dir}/sdkconfig"
     board_defaults = REPO_ROOT / f"sdkconfig.defaults.{flipper_board}"
     if board_defaults.exists():
         args += f' -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.{flipper_board}"'

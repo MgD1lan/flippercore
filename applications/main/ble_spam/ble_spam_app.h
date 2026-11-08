@@ -38,6 +38,14 @@ typedef enum {
 } BleSpamWalkEvent;
 
 typedef enum {
+    BleSpamWardrivingOk = 300,
+    BleSpamWardrivingUp,
+    BleSpamWardrivingDown,
+    BleSpamWardrivingLeft,
+    BleSpamWardrivingRight,
+} BleSpamWardrivingEvent;
+
+typedef enum {
     BleSpamViewSubmenu,
     BleSpamViewRunning,
     BleSpamViewTextInput,

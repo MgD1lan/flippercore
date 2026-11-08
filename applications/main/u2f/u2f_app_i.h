@@ -29,6 +29,7 @@ typedef enum {
     U2fCustomEventDataError,
 
     U2fCustomEventRegister,
+    U2fCustomEventRegisterSuccess,
     U2fCustomEventAuth,
     U2fCustomEventAuthSuccess,
     U2fCustomEventWink,
@@ -58,5 +59,6 @@ struct U2fApp {
     U2fData* u2f_instance;
     GpioCustomEvent event_cur;
     bool u2f_ready;
+    bool pending_key_gen;
     U2fAppError error;
 };

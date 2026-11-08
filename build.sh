@@ -19,6 +19,7 @@ declare -A TARGETS=(
     ["waveshare_c6_1.47"]="esp32c6"
     ["t_embed"]="esp32s3"
     ["fatalcore"]="esp32s3"
+    ["paradoxt"]="esp32s3"
 )
 declare -A NAMES=(
     ["esp32s3"]="esp32s3_generic"
@@ -27,6 +28,7 @@ declare -A NAMES=(
     ["waveshare_c6_1.47"]="waveshare_c6_1.47"
     ["t_embed"]="lilygo_t_embed_cc1101"
     ["fatalcore"]="fatalcore"
+    ["paradoxt"]="paradoxt"
 )
 declare -A DIRS=(
     ["esp32s3"]="build_s3"
@@ -35,12 +37,13 @@ declare -A DIRS=(
     ["waveshare_c6_1.47"]="build_waveshare_c6_1.47"
     ["t_embed"]="build_t_embed"
     ["fatalcore"]="build_fatalcore"
+    ["paradoxt"]="build_paradoxt"
 )
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") --board <name> [options]
-Boards: esp32s3, waveshare_c6, waveshare_c6_1.9, waveshare_c6_1.47, t_embed, fatalcore
+Boards: esp32s3, waveshare_c6, waveshare_c6_1.9, waveshare_c6_1.47, t_embed, fatalcore, paradoxt
 Options: -p|--port, -m|--monitor, --build-only
 EOF
 }
@@ -131,12 +134,16 @@ if [[ -f "sdkconfig.defaults.${BOARD}" ]]; then
     BOARD_DEFAULTS_OPTS=("-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.${BOARD}")
 fi
 
+# Each board keeps its own sdkconfig inside its build dir, so one board's
+# choices (e.g. dual-core on T-Embed / paradoxt) never leak into another.
+SDKCONFIG_OPT=("-DSDKCONFIG=${BUILD_DIR}/sdkconfig")
+
 # Set target (creates/updates sdkconfig)
-idf.py -B "${BUILD_DIR}" "${BOARD_DEFAULTS_OPTS[@]}" set-target "${TARGET}"
+idf.py -B "${BUILD_DIR}" "${SDKCONFIG_OPT[@]}" "${BOARD_DEFAULTS_OPTS[@]}" set-target "${TARGET}"
 
 # Construct command
 COMMANDS=("reconfigure" "build")
-PY_OPTS=("-B" "${BUILD_DIR}" "-DFLIPPER_BOARD=${BOARD}" "${BOARD_DEFAULTS_OPTS[@]}")
+PY_OPTS=("-B" "${BUILD_DIR}" "-DFLIPPER_BOARD=${BOARD}" "${SDKCONFIG_OPT[@]}" "${BOARD_DEFAULTS_OPTS[@]}")
 
 if [[ "${BUILD_ONLY}" -eq 0 ]]; then
     COMMANDS+=("flash")

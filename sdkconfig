@@ -576,6 +576,11 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of T-Embed Plus SD recovery
 
 #
+# Forced reboot combo
+#
+# end of Forced reboot combo
+
+#
 # Compiler options
 #
 CONFIG_COMPILER_OPTIMIZATION_DEBUG=y

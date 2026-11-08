@@ -22,11 +22,18 @@ Join the [Flipper Zero meets ESP32 - Discord](https://discord.gg/5DnAqFXaBC) for
 | Board | MCU | Display | Input | SubGHz | NFC | IR | SD Card |
 |---|---|---|---|---|---|---|---|
 | **LilyGo T-Embed CC1101** | ESP32-S3 (Xtensa LX7) | ST7789 320×170 | Rotary encoder + button | CC1101 | PN532 (I2C) | RMT TX + RX | SPI |
+| **Paradoxt** | ESP32-S3 N16R8 (Xtensa LX7) | ST7789 320×170 | 6 buttons (4-way D-pad + OK + Back) | CC1101 + NRF24 | PN532 (I2C) | RMT TX + RX | SPI |
 | **Waveshare ESP32-C6-LCD-1.9** | ESP32-C6 (RISC-V) | ST7789V2 320×172 | CST816S touch | — | — | — | SPI |
 | **Waveshare ESP32-C6-LCD-1.47** ⚠️ | ESP32-C6 (RISC-V) | JD9853 320×172 | AXS5106L touch | — | — | — | SPI |
 | **DIY ESP32-S3 (N16R8)** | ESP32-S3 (Xtensa LX7) | ST7789 320×172 | 6× Tactile buttons | CC1101 (+ NRF24) | PN532 (I2C) | TX + RX | SPI |
 | **Fatal Core / FATALCORE BTW** | ESP32-S3 (Xtensa LX7, 16 MB flash / 8 MB PSRAM) | ST7789 320×172 | 5× Tactile buttons | CC1101 (shared SPI) + nRF24 | ST25R3916 (SPI) | TX + RX | SPI (shared, hardened) |
+| **ThorChimera** | ESP32-S3 (Xtensa LX7) | ST7789 320×170 | Rotary encoder + button | CC1101 + NRF24 | PN532 (I2C) | RMT TX + RX | SPI |
+| **ThorMini** | ESP32-S3 (Xtensa LX7) | SSD1306 / SH1106 OLED (I²C) | 6× buttons | CC1101 + NRF24 | PN532 (I2C) | TX + RX | SPI |
+| **M5Stack M5Stick S3** † | ESP32-S3-PICO (8 MB PSRAM) | ST7789 135×240 | 2 buttons + BMI270 tilt-to-wake | CC1101 + NRF24 † | PN532 (I2C) † | RMT TX + RX | SPI (+ LittleFS) |
+| **M5Stack Cardputer ADV** † | ESP32-S3FN8 (no PSRAM) | ST7789V2 240×135 | TCA8418 QWERTY keyboard | CC1101 + NRF24 † | PN532 (I2C) † | RMT TX + RX | SPI |
 
+
+> † **M5Stick S3 and Cardputer ADV are early bring-up** (added in #112). Display, input, IR and BLE work; the SubGHz / NFC / nRF24 subsystems are present in the board profile but not yet hardware-validated on these M5 devices.
 
 > ⚠️ **Waveshare ESP32-C6-LCD-1.47 — supported but barely usable.** The board builds, boots and the UI/touch work, but the ESP32-C6 has only **512 KB SRAM and no PSRAM**. RAM-heavy apps are effectively non-functional. In particular **WiFi**: a normal AP scan works, but **monitor mode / handshake capture fails** — by the time the app's buffers are allocated the WiFi driver can no longer allocate its DMA buffers (`esf_buf_setup_static: alloc eb fail` → `ESP_ERR_NO_MEM`), so no frames are received. Treat this board as usable only for lightweight apps until the WiFi app's memory footprint is reduced (it was designed for the PSRAM-equipped T-Embed).
 
@@ -69,6 +76,8 @@ External CC1101 receiver/transmitter for 433–868 MHz signals.
 - Transmit saved files; manual signal creation (frequency, modulation, protocol, key/serial/counter)
 - Brute force / sub-brute attack with manufacturer dictionary
 - Playlist for sequential transmit
+- **Jammer** — continuous carrier/noise jammer on a selected frequency
+- **External FAP launchers** — the Sub-GHz menu also shows **ProtoPirate** and **wM-Burst** entries when those FAPs are installed on the SD card
 - **More protocols** — added KeeLoq variants (ERREKA, PUJOL, AERF, SIMPLE_JCM), Agilize Key Pro and Holtek HT6P20B
 - **TPMS decoding** — tire-pressure sensors: Schrader GG4, Citroën, Ford, Renault, Toyota (PMV107J) and a generic decoder; dedicated info view with editable sensor data
 - **Limitation:** AES-encrypted manufacturer keystores (`keeloq_mfcodes`, `nice_flor_s`, `alutech_at_4n`) are not decryptable on this port — only the plain-text `keeloq_mfcodes_user` works for Keeloq decoding.
@@ -79,15 +88,17 @@ Multi-button remote layouts that batch saved `.sub` files. Map Up/Down/Left/Righ
 #### WiFi
 Full WiFi pentest toolkit.
 - **Scanner** — SSID, BSSID, channel, RSSI, auth mode
+- **WiFi Live Scan** — passive monitor-mode view of beacon/probe-response AP announcements; records up to 64 APs in RAM with BSSID, SSID, RSSI, channel, security and vendor details. It does not save a scan file and can disconnect an active WiFi station connection while taking over the radio.
 - **Connect** — auto-detect WPA/WPA2/WPA3, password input or saved password lookup (`/ext/wifi/<ssid>.txt`)
-- **Deauther** — SSID-mode (single AP) or Channel-mode (all on channel)
-- **Smart Deauth** — targeted, station-aware deauthentication
+- **Deauther** — scanner, SSID-mode (single AP) or Channel-mode (all on channel)
+- **Smart Deauth** — scans APs and observed stations, offers a selected target view and a monitor view with RSSI/PMF information
 - **Sniffer** — capture packets to PCAP (saved to `/ext/wifi/`)
+- **Deauth All** — scans APs on start, then cycles through that AP list sending deauthentication/disassociation traffic. Optional periodic rescans use a saved 10–60 second interval. The implementation does not enumerate associated client stations; use only on networks you own or are authorized to test.
 - **Handshake capture** — record EAPOL 4-way handshakes, optionally with deauth trigger
 - **AirSnitch** — auto-bruteforce target with password list
 - **Beacon Spam** — Funny SSIDs / Rickroll / Random / Custom
 - **Network Scan / Port Scan** — host discovery + 19 common-port probe on the connected network
-- **Web Crawler** — domain-based web crawler
+- **MITM** — ARP-spoof man-in-the-middle on the connected LAN: live credential capture and HTML/JS code injection into a target's web traffic
 - **Evil Portal** — captive portal with credential harvesting
   - Built-in templates: Google login, Router firmware update
   - Custom templates from `/ext/wifi/evil_portal/login_template/*.html` and `/ext/wifi/evil_portal/router_template/*.html` (filename = template name in dropdown)
@@ -99,6 +110,7 @@ Full WiFi pentest toolkit.
 - **Web-Filesystem** — HTTP file server for the SD card; open it in a browser (device hotspot *or* your existing WiFi) to upload, download, rename and delete files, with drag & drop for whole folders
 - **SMB Browser** — browse and download from SMB2/3 network shares (Windows / macOS / NAS) straight to the SD card; guest or password login
 - **Android TV Remote** — control any Android / Google TV (Sony, NVIDIA Shield, Xiaomi Mi Box, Chromecast, …): scan → pair once with the on-screen PIN → on-screen remote (D-Pad, volume, media, power)
+- **AirPrint** — virtual AirPrint/IPP network printer; advertises over mDNS and saves incoming print jobs to the SD card
 - **Global toggle** — WiFi is now an on/off switch like Bluetooth (from the lock menu); the connection persists across apps and reconnects automatically after a reboot
 
 #### Mesh / Buddy *(ESP-NOW)*
@@ -113,14 +125,16 @@ Pair cheap headless ESP32 boards (**buddies**) to the T-Embed (**master**) over 
 #### Bluetooth
 - **BLE Spam** — Apple Continuity (Pair/Action/NotYourDevice), Google FastPair (455+ models), Microsoft SwiftPair, Samsung Buds & Watch, Xiaomi QuickConnect
 - **BLE Walk** — passive scanner with GATT service/characteristic inspection
-- **BLE Clone** *(dev)* — replicate active BLE advertisements
+- **Auto Walk** — automated BLE walk with logging
+- **Tracker** — BLE tracker scanner with a "geiger" proximity view
+- **Airoha RACE** — detector for the Airoha RACE GATT service (CVE-2025-20700)
 - **FindMy** — emulate Apple AirTag, Samsung SmartTag, Tile beacons (clone or generate keypairs)
 - **HID** *(see below)* — keyboard/mouse/media remote over BLE
 - **Bad USB** — via USB or BLE
 
 #### NRF24 *(2.4 GHz, external nRF24L01)*
 - **Spectrum analyzer** — live 2.4 GHz channel activity
-- **Jammer** *(rewritten)* — one engine with switchable channel sources (Protocol / Manual / WiFi / Activity scan), strategies (CW / Flood / Turbo) and presets; configuration persists per source
+- **Jammer** *(rewritten)* — one engine with switchable channel sources (Protocol / WiFi / Activity scan), strategies (CW / Flood / Turbo / AFH) and presets; configuration persists per source
 - **MouseJacker** — inject keystrokes into vulnerable wireless mice/keyboards
 - Also available as a FAP (`nRF24_jammer`)
 
@@ -163,6 +177,9 @@ HID payload runner for Ducky-script (`.txt`) files from `/ext/badusb/`.
 - Mouse movement, scroll, button emulation; per-character typing delay
 - **Transport:** USB OTG (TinyUSB) on T-Embed, BLE on Waveshare
 
+#### U2F (USB FIDO)
+USB HID FIDO U2F authenticator for configured ESP32-S3 profiles. Supports U2F registration and authentication with on-device user confirmation and a persistent signature counter; it does not implement CTAP2/WebAuthn passkeys. When no usable attestation certificate is present, the app offers a **Generate** button that creates a device-specific self-signed P-256 certificate/key on the device — no PC tooling or manual file copying required (you can still install your own pair). Certificate provisioning, USB ownership constraints and recovery notes are in [the U2F guide](applications/main/u2f/README.md).
+
 ### 🛠 System / Tools
 
 #### Lock Menu / System Toggles
@@ -175,7 +192,7 @@ The desktop lock menu doubles as the central system control panel (board-depende
 - **Mesh Clients** — buddy discovery & control *(see Mesh / Buddy above)*
 
 #### Archive
-SD-card file browser with tabs per media type: Favorites, Sub-GHz, NFC, LF-RFID, Infrared, iButton, Bad USB, U2F, Apps, Internal, Browser. Pin/unpin favorites; copy, paste, rename, delete, create folder.
+SD-card file browser with tabs per media type: Favorites, Sub-GHz, Sub-GHz Remote, NFC, LF-RFID, Infrared, iButton, Bad USB, U2F, Apps, Internal, Browser. Pin/unpin favorites; copy, paste, rename, delete, create folder.
 
 #### JS Runner
 mJS-based JavaScript runtime for user scripts in `/ext/apps/Scripts/*.js`.
@@ -195,11 +212,15 @@ files from `/ext/apps_data/medien`.
 #### Doom
 Full DOOM port. Place `doom1.wad` at `/ext/apps_data/doom/doom1.wad`. Encoder turns; click fires (short) / walks forward (long). Side-button uses doors/switches (short) / opens menu (long).
 
+#### Wolf3D
+Wolfenstein 3D port (T-Embed only — same PSRAM, 320×N display and I2S requirements as Doom).
+
 #### Snake
 Classic snake game.
 
 ### ⚙ Settings & General
-Bluetooth, backlight, clock, dolphin/passport, expansion port, input, notification, power, storage, system info, factory reset. Animated dolphin desktop on idle. File-pack manifest at `/ext/Manifest` (qFlipper-style asset list — its presence suppresses the "No DB" boot animation).
+Bluetooth, backlight, clock, dolphin/passport, notification, power, storage, system info, factory reset. Animated dolphin desktop on idle. File-pack manifest at `/ext/Manifest` (qFlipper-style asset list — its presence suppresses the "No DB" boot animation).
+- **Desktop** — configure the desktop PIN, automatic lock timeout and USB-session auto-lock behavior; assign favorite apps and Dummy Mode actions to button shortcuts.
 - **Update Firmware** — wireless OTA firmware + SD-card update *(see [Firmware Update](#firmware-update) above)*
 - **Interface** — customize the main menu and its layout
 - **Spoofing** — change the device name and the shell/terminal color
@@ -210,22 +231,37 @@ Bluetooth, backlight, clock, dolphin/passport, expansion port, input, notificati
 |---|---|
 | `/ext/Manifest` | Desktop (presence check) |
 | `/ext/dolphin/` + `manifest.txt` | Idle animations |
+| `/ext/asset_packs/<pack>/` | Custom desktop animation packs selected in Settings → Interface → Graphics → Asset Pack. The pack manifest may be in the pack root or its `Anims/` subfolder. |
+| `/ext/apps_assets/fmtx/` | MP3 tracks required by the FMTX FAP. |
+| `/ext/apps_assets/proto_pirate/` | ProtoPirate plugins, model database, and keystore data; keep with the updated ProtoPirate FAP. |
 | `/ext/apps_assets/nfc/plugins/` | NFC protocol plugins (.fal) |
 | `/ext/apps_data/nfc/plugins/` | NFC card-parser plugins (.fal) |
-| `/ext/apps_data/js_app/plugins/` | JS module bindings (.fal) |
+| `/ext/apps_data/js_app/plugins/` | JS module bindings (.fal), including the updated `js_badusb.fal` (replace the older file; other plugins are unchanged). |
 | `/ext/apps_data/doom/doom1.wad` | Doom |
 | `/ext/badusb/` | Bad USB scripts + `assets/layouts/*.kl` |
 | `/ext/infrared/assets/` | Universal remote DBs (`tv.ir`, `ac.ir`, `audio.ir`, `projectors.ir`, `fans.ir`, `leds.ir`) |
-| `/ext/lfrfid/assets/iso3166.lfrfid` | LF-RFID country code lookup |
 | `/ext/nfc/assets/` | MIFARE & EMV dictionaries |
 | `/ext/subghz/assets/` | SubGHz keystores + `dangerous_settings` |
-| `/ext/u2f/assets/` | U2F cert + key |
+| `/ext/u2f/assets/` | Updated U2F certificate/key pair; replace an older pair together (see [`sdcard/README.md`](sdcard/README.md)) |
 | `/ext/wifi/<ssid>.txt` | Saved WiFi passwords |
+| `/ext/wifi/deauth_all.cfg` | Deauth All scan settings |
 | `/ext/wifi/buddy_<name>_<ssid>.pcap` | Mesh/Buddy handshake captures |
 | `/ext/wifi/evil_portal/login_template/` | Custom captive-portal templates (no verify) |
 | `/ext/wifi/evil_portal/router_template/` | Custom captive-portal templates (with WLAN verify) |
 
+### SD card files included in this repository
+
+The [`sdcard/`](sdcard/) directory mirrors the root of an SD card and keeps files that developers may need to copy or package with the firmware. Copy the contents of this directory to the card root; do not create an extra `sdcard/` directory on the card.
+
+| Repository path | SD card path | Contents |
+|---|---|---|
+| [`sdcard/apps/`](sdcard/apps/) | `/apps/` | Prebuilt FAP packages included with this project. FAP source, where available, is kept under `applications_user/`. |
+| [`sdcard/asset_packs/`](sdcard/asset_packs/) | `/asset_packs/` | 35 desktop animation packs from the supplied SD card; select them in Settings → Interface → Graphics → Asset Pack. |
+| [`sdcard/u2f/assets/`](sdcard/u2f/assets/) | `/u2f/assets/` | Matching `cert.der` and `cert_key.u2f` files required by U2F. On first use, firmware imports and encrypts the certificate key; see the [U2F guide](applications/main/u2f/README.md). |
+
 A complete starter kit is in [sdcard.zip](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port/releases/latest/download/sdcard.zip) — extract it onto a FAT32 SD.
+
+The repository-side SD card files, including the FAP binaries required on the card, are documented in [`sdcard/README.md`](sdcard/README.md).
 
 ## Building
 
@@ -252,7 +288,14 @@ A complete starter kit is in [sdcard.zip](https://github.com/Sor3nt/Flipper-Zero
 
 # Fatal Core / FATALCORE BTW (ST25R3916 NFC over SPI)
 ./buildAndFlash_FatalCore.sh --build-only
+
+# Generic builder for the other boards: ./build.sh --board <name>
+# supported: t_embed, esp32s3, paradoxt, waveshare_c6, waveshare_c6_1.9, waveshare_c6_1.47
+./build.sh --board paradoxt
 ```
+
+> The newer **ThorChimera, ThorMini, M5Stick S3 and Cardputer ADV** targets do not yet have a
+> dedicated shell script — build them through `winbuild.py` (`python winbuild.py build --board <name>`).
 
 ### Build & Flash (Windows)
 
@@ -281,7 +324,7 @@ python winbuild.py monitor --duration 30
 python winbuild.py all --port COM14
 ```
 
-Boards: `t_embed` (default), `esp32s3`, `waveshare_c6` (or `waveshare_c6_1.9`), `waveshare_c6_1.47`. Override defaults with `ESP_IDF_DIR` and `ESPPORT` env vars. `monitor --reset` only works on USB-UART bridges, not on the ESP32-S3 native USB-Serial/JTAG — use `flash` or `all` to capture boot logs.
+Boards: `t_embed` (default), `esp32s3`, `paradoxt`, `thorchimera`, `thormini`, `m5stick_s3`, `cardputer_adv`, `waveshare_c6` (or `waveshare_c6_1.9`), `waveshare_c6_1.47`. Override defaults with `ESP_IDF_DIR` and `ESPPORT` env vars. `monitor --reset` only works on USB-UART bridges, not on the ESP32-S3 native USB-Serial/JTAG — use `flash` or `all` to capture boot logs.
 
 ### Build a FAP
 

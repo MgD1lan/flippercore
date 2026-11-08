@@ -3,8 +3,9 @@
 #include <dolphin/dolphin.h>
 #include <furi_hal.h>
 #include "../u2f.h"
+#include "../u2f_data.h"
 
-#define U2F_REQUEST_TIMEOUT 500
+#define U2F_REQUEST_TIMEOUT 30000
 #define U2F_SUCCESS_TIMEOUT 3000
 
 static void u2f_scene_main_ok_callback(InputType type, void* context) {
@@ -19,6 +20,8 @@ static void u2f_scene_main_event_callback(U2fNotifyEvent evt, void* context) {
     U2fApp* app = context;
     if(evt == U2fNotifyRegister)
         view_dispatcher_send_custom_event(app->view_dispatcher, U2fCustomEventRegister);
+    else if(evt == U2fNotifyRegisterSuccess)
+        view_dispatcher_send_custom_event(app->view_dispatcher, U2fCustomEventRegisterSuccess);
     else if(evt == U2fNotifyAuth)
         view_dispatcher_send_custom_event(app->view_dispatcher, U2fCustomEventAuth);
     else if(evt == U2fNotifyAuthSuccess)
@@ -39,6 +42,38 @@ static void u2f_scene_main_timer_callback(void* context) {
     view_dispatcher_send_custom_event(app->view_dispatcher, U2fCustomEventTimeout);
 }
 
+// Allocate + initialize the authenticator and start the USB HID worker.
+// Picks the matching view state, including the "Generate" prompt when no usable
+// attestation certificate is present yet.
+static void u2f_scene_main_bringup(U2fApp* app) {
+    app->pending_key_gen = false;
+    app->u2f_instance = u2f_alloc();
+    app->u2f_ready = app->u2f_instance && u2f_init(app->u2f_instance);
+    if(app->u2f_ready) {
+        u2f_set_event_callback(app->u2f_instance, u2f_scene_main_event_callback, app);
+        app->u2f_hid = u2f_hid_start(app->u2f_instance);
+        if(app->u2f_hid) {
+            u2f_view_set_state(app->u2f_view, U2fMsgNotConnected);
+        } else {
+            app->u2f_ready = false;
+            u2f_free(app->u2f_instance);
+            app->u2f_instance = NULL;
+            u2f_view_set_state(app->u2f_view, U2fMsgUsbError);
+        }
+    } else {
+        if(app->u2f_instance) u2f_free(app->u2f_instance);
+        app->u2f_instance = NULL;
+        if(u2f_data_cert_check() == false || u2f_data_cert_key_check() == false) {
+            // No usable attestation certificate/key (missing, invalid, or the
+            // unsupported factory key) — offer on-device generation.
+            app->pending_key_gen = true;
+            u2f_view_set_state(app->u2f_view, U2fMsgGenerate);
+        } else {
+            u2f_view_set_state(app->u2f_view, U2fMsgError);
+        }
+    }
+}
+
 bool u2f_scene_main_on_event(void* context, SceneManagerEvent event) {
     furi_assert(context);
     U2fApp* app = context;
@@ -53,7 +88,7 @@ bool u2f_scene_main_on_event(void* context, SceneManagerEvent event) {
             app->event_cur = U2fCustomEventNone;
             u2f_view_set_state(app->u2f_view, U2fMsgNotConnected);
         } else if((event.event == U2fCustomEventRegister) || (event.event == U2fCustomEventAuth)) {
-            furi_timer_start(app->timer, U2F_REQUEST_TIMEOUT);
+            furi_timer_start(app->timer, furi_ms_to_ticks(U2F_REQUEST_TIMEOUT));
             if(app->event_cur == U2fCustomEventNone) {
                 app->event_cur = event.event;
                 if(event.event == U2fCustomEventRegister)
@@ -66,23 +101,39 @@ bool u2f_scene_main_on_event(void* context, SceneManagerEvent event) {
             notification_message(app->notifications, &sequence_blink_magenta_10);
         } else if(event.event == U2fCustomEventWink) {
             notification_message(app->notifications, &sequence_blink_magenta_10);
+        } else if(event.event == U2fCustomEventRegisterSuccess) {
+            furi_timer_start(app->timer, furi_ms_to_ticks(U2F_SUCCESS_TIMEOUT));
+            app->event_cur = U2fCustomEventNone;
+            u2f_view_set_state(app->u2f_view, U2fMsgRegisterSuccess);
         } else if(event.event == U2fCustomEventAuthSuccess) {
             notification_message_block(app->notifications, &sequence_set_green_255);
             dolphin_deed(DolphinDeedU2fAuthorized);
-            furi_timer_start(app->timer, U2F_SUCCESS_TIMEOUT);
+            furi_timer_start(app->timer, furi_ms_to_ticks(U2F_SUCCESS_TIMEOUT));
             app->event_cur = U2fCustomEventNone;
             u2f_view_set_state(app->u2f_view, U2fMsgSuccess);
         } else if(event.event == U2fCustomEventTimeout) {
+            if(app->u2f_instance) u2f_cancel_user_presence(app->u2f_instance);
             notification_message_block(app->notifications, &sequence_reset_rgb);
             app->event_cur = U2fCustomEventNone;
             u2f_view_set_state(app->u2f_view, U2fMsgIdle);
         } else if(event.event == U2fCustomEventConfirm) {
-            if(app->event_cur != U2fCustomEventNone) {
+            if(app->pending_key_gen) {
+                app->pending_key_gen = false;
+                notification_message(app->notifications, &sequence_blink_cyan_10);
+                if(u2f_data_cert_generate()) {
+                    // Re-initialize now that a certificate/key exists.
+                    u2f_scene_main_bringup(app);
+                } else {
+                    u2f_view_set_state(app->u2f_view, U2fMsgError);
+                }
+            } else if(app->event_cur != U2fCustomEventNone && app->u2f_instance) {
                 u2f_confirm_user_present(app->u2f_instance);
             }
         } else if(event.event == U2fCustomEventDataError) {
             notification_message(app->notifications, &sequence_set_red_255);
             furi_timer_stop(app->timer);
+            app->event_cur = U2fCustomEventNone;
+            if(app->u2f_instance) u2f_cancel_user_presence(app->u2f_instance);
             u2f_view_set_state(app->u2f_view, U2fMsgError);
         }
         consumed = true;
@@ -96,16 +147,11 @@ void u2f_scene_main_on_enter(void* context) {
 
     app->timer = furi_timer_alloc(u2f_scene_main_timer_callback, FuriTimerTypeOnce, app);
 
-    app->u2f_instance = u2f_alloc();
-    app->u2f_ready = u2f_init(app->u2f_instance);
-    if(app->u2f_ready == true) {
-        u2f_set_event_callback(app->u2f_instance, u2f_scene_main_event_callback, app);
-        app->u2f_hid = u2f_hid_start(app->u2f_instance);
-        u2f_view_set_ok_callback(app->u2f_view, u2f_scene_main_ok_callback, app);
-    } else {
-        u2f_free(app->u2f_instance);
-        u2f_view_set_state(app->u2f_view, U2fMsgError);
-    }
+    // Set the OK callback up front so the "Generate" prompt's button works even
+    // when the authenticator did not initialize.
+    u2f_view_set_ok_callback(app->u2f_view, u2f_scene_main_ok_callback, app);
+
+    u2f_scene_main_bringup(app);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, U2fAppViewMain);
 }
