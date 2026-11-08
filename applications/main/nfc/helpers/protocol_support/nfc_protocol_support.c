@@ -406,6 +406,7 @@ static void nfc_protocol_support_read_build_view(NfcApp* instance) {
 
 static void nfc_protocol_support_read_start_pn532(NfcApp* instance) {
     const NfcProtocol protocol = nfc_detected_protocols_get_selected(instance->detected_protocols);
+    FURI_LOG_I(TAG, "read start: protocol=%d", protocol);
     instance->poller = nfc_poller_alloc(instance->nfc, protocol);
     // Start poller with the appropriate callback
     nfc_protocol_support_get(protocol, instance)->scene_read.on_enter(instance);
@@ -486,6 +487,7 @@ static bool nfc_protocol_support_scene_read_on_event(NfcApp* instance, SceneMana
             dolphin_deed(DolphinDeedNfcReadSuccess);
             consumed = true;
         } else if(event.event == NfcCustomEventPollerSuccess) {
+            FURI_LOG_I(TAG, "read scene: PollerSuccess");
             nfc_poller_stop(instance->poller);
             nfc_poller_free(instance->poller);
             notification_message(instance->notifications, &sequence_success);
@@ -493,6 +495,7 @@ static bool nfc_protocol_support_scene_read_on_event(NfcApp* instance, SceneMana
             dolphin_deed(DolphinDeedNfcReadSuccess);
             consumed = true;
         } else if(event.event == NfcCustomEventPollerIncomplete) {
+            FURI_LOG_I(TAG, "read scene: PollerIncomplete");
             nfc_poller_stop(instance->poller);
             nfc_poller_free(instance->poller);
             /* Skip nfc_supported_cards_read — it starts new pollers which can
@@ -511,6 +514,7 @@ static bool nfc_protocol_support_scene_read_on_event(NfcApp* instance, SceneMana
                 consumed = true;
             }
         } else if(event.event == NfcCustomEventPollerFailure) {
+            FURI_LOG_I(TAG, "read scene: PollerFailure");
             nfc_poller_stop(instance->poller);
             nfc_poller_free(instance->poller);
             if(scene_manager_has_previous_scene(instance->scene_manager, NfcSceneDetect)) {

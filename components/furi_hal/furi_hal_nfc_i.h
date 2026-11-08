@@ -100,6 +100,15 @@ void furi_hal_nfc_timers_init(void);
 void furi_hal_nfc_timers_deinit(void);
 
 /**
+ * @brief Cancel any pending NFC timeout, keeping the timers allocated.
+ *
+ * Used when entering low power: the timers live for the whole session, so a
+ * power-down only has to disarm them instead of deleting and re-creating
+ * them (which raced with the worker thread using them).
+ */
+void furi_hal_nfc_timers_stop(void);
+
+/**
  * @brief Get the interrupt bitmask from the NFC hardware.
  *
  * @param[in,out] handle pointer to the SPI handle associated with the NFC chip.

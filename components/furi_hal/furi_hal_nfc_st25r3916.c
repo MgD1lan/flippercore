@@ -210,12 +210,18 @@ static void furi_hal_nfc_deinit_keep_osc(const FuriHalSpiBusHandle* handle) {
 }
 
 #ifdef BOARD_NFC_CHIP_ID_SWEEP
-/* Bring-up helper: read IC_IDENTITY at several SPI clocks so we can tell a
- * clock-margin problem (first read corrupt) from a genuinely different chip
- * (always the same, wrong type). Every result is logged with its clock. */
+/* Bring-up helper: try to wake the front-end at several SPI clocks.
+ *
+ * The chip answers at 4 MHz once its oscillator is running, but a chip in
+ * power-down may be clocked from its internal RC oscillator and then tolerate
+ * far less on SCK. Every step writes OP_CONTROL.en (a write does not need a
+ * working MISO), waits for the oscillator, and then reads the oscillator
+ * status, the chip id and one written-back register. That separates
+ * "transaction is garbled at this clock" from "the chip does not answer at
+ * any clock". */
 static void furi_hal_nfc_chip_id_sweep(void) {
-    static const uint32_t freqs[] = {4000000, 2000000, 1000000, 500000, 200000};
-    static const char* const names[] = {"4MHz", "2MHz", "1MHz", "500kHz", "200kHz"};
+    static const uint32_t freqs[] = {4000000, 2000000, 1000000, 500000, 200000, 100000};
+    static const char* const names[] = {"4MHz", "2MHz", "1MHz", "500kHz", "200kHz", "100kHz"};
     FuriHalSpiBusHandle* handle = (FuriHalSpiBusHandle*)&furi_hal_spi_bus_handle_nfc;
     const uint32_t saved_hz = handle->frequency_hz;
 
@@ -224,11 +230,30 @@ static void furi_hal_nfc_chip_id_sweep(void) {
         handle->frequency_hz = freqs[f];
         furi_hal_spi_bus_handle_init(handle);
 
-        for(int i = 0; i < 3; i++) {
-            uint8_t id = 0;
-            st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &id);
-            FURI_LOG_I(TAG, "id sweep %s[%d]=0x%02X", names[f], i, id);
-        }
+        uint8_t op = 0;
+        uint8_t aux = 0;
+        uint8_t id = 0;
+        uint8_t io2 = 0;
+
+        st25r3916_write_reg(handle, ST25R3916_REG_OP_CONTROL, ST25R3916_REG_OP_CONTROL_en);
+        furi_delay_ms(50);
+        st25r3916_read_reg(handle, ST25R3916_REG_OP_CONTROL, &op);
+        st25r3916_read_reg(handle, ST25R3916_REG_AUX_DISPLAY, &aux);
+        st25r3916_read_reg(handle, ST25R3916_REG_IC_IDENTITY, &id);
+
+        /* Independent write/read-back, so a dead read path cannot be mistaken
+         * for a rejected write. */
+        st25r3916_write_reg(handle, ST25R3916_REG_IO_CONF2, ST25R3916_REG_IO_CONF2_io_drv_lvl);
+        st25r3916_read_reg(handle, ST25R3916_REG_IO_CONF2, &io2);
+
+        FURI_LOG_I(
+            TAG,
+            "wake sweep %s: op=0x%02X aux=0x%02X io2=0x%02X id=0x%02X",
+            names[f],
+            op,
+            aux,
+            io2,
+            id);
     }
 
     furi_hal_spi_bus_handle_deinit(handle);
@@ -722,6 +747,10 @@ static FuriHalNfcError furi_hal_nfc_init_impl(void) {
 
     furi_hal_nfc_event_init();
     furi_hal_nfc_event_start();
+    /* The timers are needed by every poller transaction and live for the whole
+     * session. Creating them here (instead of only in low_power_mode_stop())
+     * means the first transaction cannot find them missing. */
+    furi_hal_nfc_timers_init();
 
     do {
         error = furi_hal_nfc_acquire();
@@ -743,10 +772,44 @@ static FuriHalNfcError furi_hal_nfc_init_impl(void) {
             furi_hal_nfc_release();
             break;
         }
-        // Set default state, start the oscillator and check the chip type
+        /* Set default state, start the oscillator and check the chip type */
 #ifdef BOARD_NFC_CHIP_ID_SWEEP
         furi_hal_nfc_chip_id_sweep();
 #endif
+        /* Make sure the front-end answers before touching anything else.
+         *
+         * This board has no NFC reset line, so the ST25R3916 comes up in
+         * whatever state the previous run left it in. One such state is
+         * "everything reads back 0x00", including the read-only IC_IDENTITY,
+         * with writes apparently lost; it was hit on this board after a
+         * bring-up build and it survives MCU resets and reflashes. The wake
+         * sweep showed that a single plain write of OP_CONTROL.en plus a
+         * settle delay brings the chip back at any clock from 4 MHz down to
+         * 100 kHz, so this is register state, not SPI timing.
+         *
+         * furi_hal_nfc_read_chip_id() does exactly that and costs one register
+         * read when the chip is healthy, so recovery does not slow down or
+         * disturb a normal boot. Doing it here also matters because
+         * identify_chip() starts with SET_DEFAULT and a read-modify-write on
+         * IO_CONF2: on a wedged chip those are lost too, every retry repeats
+         * them, and the boot ends with the front-end dead. */
+        uint8_t pre_op = 0;
+        uint8_t pre_id = 0;
+        st25r3916_read_reg(handle, ST25R3916_REG_OP_CONTROL, &pre_op);
+        if(furi_hal_nfc_read_chip_id(handle, &pre_id)) {
+            FURI_LOG_I(
+                TAG,
+                "init: chip found: OP_CONTROL=0x%02X IC_IDENTITY=0x%02X",
+                pre_op,
+                pre_id);
+        } else {
+            FURI_LOG_W(
+                TAG,
+                "init: front-end did not answer: OP_CONTROL=0x%02X IC_IDENTITY=0x%02X",
+                pre_op,
+                pre_id);
+        }
+
         uint8_t chip_id = 0;
         const bool id_ok = furi_hal_nfc_identify_chip(handle, &chip_id);
         FURI_LOG_I(
@@ -797,6 +860,7 @@ static FuriHalNfcError furi_hal_nfc_init_impl(void) {
         st25r3916_read_reg(handle, ST25R3916_REG_AD_RESULT, &ad_res);
         uint16_t mV = ((uint16_t)ad_res) * 23U;
         mV += (((((uint16_t)ad_res) * 4U) + 5U) / 10U);
+        FURI_LOG_I(TAG, "init: measured VDD=%umV", (unsigned)mV);
 
         if(mV < 3600) {
             st25r3916_change_reg_bits(
@@ -974,7 +1038,7 @@ FuriHalNfcError furi_hal_nfc_low_power_mode_start(void) {
          ST25R3916_REG_OP_CONTROL_wu | ST25R3916_REG_OP_CONTROL_tx_en |
          ST25R3916_REG_OP_CONTROL_en_fd_mask));
     furi_hal_nfc_deinit_gpio_isr();
-    furi_hal_nfc_timers_deinit();
+    furi_hal_nfc_timers_stop();
     furi_hal_nfc_event_stop();
 
     return error;

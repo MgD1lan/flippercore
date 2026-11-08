@@ -171,7 +171,7 @@
  * chip executes commands at all by watching its IRQ line for the "direct
  * command termination" and "oscillator stable" events. A working MISO is not
  * needed for either. Runs once, only on the failing path (~45 ms). */
-/* #define BOARD_NFC_EXEC_PROBE 1 */
+#define BOARD_NFC_EXEC_PROBE 0
 /* TEMPORARY bring-up switch: measure the IRQ pin voltage with the internal
  * pull-up enabled to tell an actively driven low line from one that is merely
  * held by a resistor. Answers "is the front-end powered at all". */

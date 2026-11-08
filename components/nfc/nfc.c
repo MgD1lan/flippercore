@@ -205,6 +205,7 @@ bool nfc_worker_poller_reset_handler(Nfc* instance) {
 }
 
 bool nfc_worker_poller_stop_handler(Nfc* instance) {
+    FURI_LOG_I(TAG, "poller stop handler");
     furi_hal_nfc_reset_mode();
     instance->config_state = NfcConfigurationStateIdle;
 
@@ -238,6 +239,7 @@ static int32_t nfc_worker_poller(void* context) {
         exit = nfc_worker_poller_state_handlers[instance->poller_state](instance);
     }
 
+    FURI_LOG_I(TAG, "poller worker exit");
     return 0;
 }
 
