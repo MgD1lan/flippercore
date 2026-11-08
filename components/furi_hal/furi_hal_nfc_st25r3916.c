@@ -666,8 +666,29 @@ void furi_hal_nfc_early_probe(void) {
 }
 #endif
 
+static FuriHalNfcError furi_hal_nfc_init_impl(void);
+
 FuriHalNfcError furi_hal_nfc_is_hal_ready(void) {
     FuriHalNfcError error = FuriHalNfcErrorNone;
+
+    /* The boot-time bring-up happens early, while the SD card, the display and
+     * the radios are still settling on the shared SPI2 bus, and it can fail
+     * without the front-end being broken (the chip keeps its state across MCU
+     * resets and may be found asleep). The app thread is a much quieter moment
+     * to try again, and the only way to recover without a reboot: there is no
+     * deinit/re-init path, because furi_hal_nfc_init() is a one-shot. */
+    if(!furi_hal_nfc.ready) {
+        if(!furi_hal_nfc.mutex) {
+            furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+        }
+        FURI_LOG_I(TAG, "is_hal_ready: HAL not configured yet, retrying init");
+        error = furi_hal_nfc_init_impl();
+        furi_hal_nfc.ready = (error == FuriHalNfcErrorNone);
+        if(!furi_hal_nfc.ready) {
+            FURI_LOG_E(TAG, "is_hal_ready: retry failed, chip still not usable");
+            return error;
+        }
+    }
 
     do {
         error = furi_hal_nfc_acquire();
@@ -693,10 +714,10 @@ FuriHalNfcError furi_hal_nfc_is_hal_ready(void) {
     return error;
 }
 
-FuriHalNfcError furi_hal_nfc_init(void) {
-    furi_check(furi_hal_nfc.mutex == NULL);
-
-    furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+/* The actual bring-up. Split out of furi_hal_nfc_init() so that
+ * furi_hal_nfc_is_hal_ready() can retry it on the app thread; the mutex and
+ * the event object are created once and reused. */
+static FuriHalNfcError furi_hal_nfc_init_impl(void) {
     FuriHalNfcError error = FuriHalNfcErrorNone;
 
     furi_hal_nfc_event_init();
@@ -893,6 +914,19 @@ FuriHalNfcError furi_hal_nfc_init(void) {
         furi_hal_nfc_low_power_mode_start();
         furi_hal_nfc_release();
     } while(false);
+
+    return error;
+}
+
+FuriHalNfcError furi_hal_nfc_init(void) {
+    furi_check(furi_hal_nfc.mutex == NULL);
+
+    furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+
+    FuriHalNfcError error = furi_hal_nfc_init_impl();
+    furi_hal_nfc.ready = (error == FuriHalNfcErrorNone);
+    FURI_LOG_I(
+        TAG, "init: front-end %s", furi_hal_nfc.ready ? "configured" : "NOT configured");
 
     return error;
 }
