@@ -100,6 +100,11 @@
 #define BOARD_SD_RECOVERY     1
 #define BOARD_EARLY_SD_INIT   1
 #define BOARD_SD_SPI_FREQ_KHZ 10000
+/* Bring-up diagnostic: measure an idle MISO (internal pull-up/pull-down and a
+ * short drive-high) right after mount. Tells an unresponsive ready-poll apart
+ * from a chip holding the shared line down. Toggles the pull resistors on a
+ * shared bus line, so it stays off outside bring-up. */
+/* #define BOARD_SD_MISO_PROBE 1 */
 
 /* ---- Touch: not present ---- */
 #define BOARD_PIN_TOUCH_SCL UINT16_MAX
