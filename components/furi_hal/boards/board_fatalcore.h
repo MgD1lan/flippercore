@@ -11,8 +11,14 @@
  * SD Card:  microSD via SPI (shared bus)
  * IR:       TSOP4838 RX + 2x IR LED TX
  * RGB LED:  1x WS2812B
- * Power:    TP4056 charger + INA219 fuel gauge on I2C
+ * Power:    TP4056 charger (3 kΩ PROG = 400 mA) + INA219 fuel gauge on I2C
+ *           with a 50 mΩ (1206) shunt
  * iButton:  1-Wire on GPIO10
+ *
+ * Hardware reference (schematics, BOM, pinout, case): the vendor repository
+ * https://github.com/Teapot174/fatalcore — hardware/fatalcore_pinout.txt and
+ * hardware/fatalcore_BOM.txt are the source of truth for the pin map and for
+ * the component values used by the drivers below.
  *
  * Bus layout (single SPI2_HOST, CS-muxed):
  *   SCK  = 17
@@ -239,10 +245,16 @@
 #define BOARD_RFID_UART_NUM 1
 
 /* ---- Battery / charger (TP4056 has no I2C; INA219 is the gauge) ---- */
+/* Shunt on the board: 50 mΩ (1206, 1 W) per the vendor BOM. Using the common
+ * 100 mΩ calibration halves every current reading, which is exactly what the
+ * first builds showed (charging reported ≈229 mA while the TP4056, programmed
+ * with a 3 kΩ PROG resistor, delivers ≈400 mA). */
+#define BOARD_INA219_SHUNT_MOHM 50
+/* One 1000 mAh cell (vendor README/BOM). */
+#define FURI_HAL_POWER_VIRTUAL_CAPACITY_MAH (1000U)
 /* OTA update source: this repo's GitHub Pages. Publish latest/version.txt
  * and latest/furi_esp32.bin there (see .github/workflows/ota-pages.yml). */
 #define BOARD_FW_OTA_URL "https://mgd1lan.github.io/flippercore"
-#define FURI_HAL_POWER_VIRTUAL_CAPACITY_MAH (2000U)
 #define BQ25896_CHARGE_LIMIT 1024
 #define BQ27220_ADDR 0x55
 /* BQ27220 probe on the Qwiic bus is expected to fail on this board; the

@@ -23,8 +23,9 @@ static const char* TAG = "INA219";
 #define BOARD_INA219_ADDR 0x40
 #endif
 
-/* Shunt resistor on the board, in milliohms. Most INA219 breakouts and the
- * Fatal Core design use a 0.1 ohm (100 mOhm) shunt. */
+/* Shunt resistor on the board, in milliohms. Fatal Core uses a 50 mΩ (1206)
+ * shunt (see the vendor BOM); most INA219 breakouts use 0.1 Ω, hence the
+ * generic default below. */
 #ifndef BOARD_INA219_SHUNT_MOHM
 #define BOARD_INA219_SHUNT_MOHM 100
 #endif
