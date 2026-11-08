@@ -32,10 +32,12 @@
 #define BOARD_ID     "fatalcore"
 #define BOARD_TARGET "esp32s3"
 
-/* ---- Buttons (active low, wired to GND) ---- */
+/* ---- Buttons (active low, wired to GND) ----
+ * Fatal Core: physical LEFT and DOWN pads are crossed on this board revision,
+ * so swap their GPIOs to match the silkscreen/expected behavior. */
 #define BOARD_PIN_BTN_UP     41
-#define BOARD_PIN_BTN_DOWN   40
-#define BOARD_PIN_BTN_LEFT   39
+#define BOARD_PIN_BTN_DOWN   39  /* swapped with LEFT (was 40) */
+#define BOARD_PIN_BTN_LEFT   40  /* swapped with DOWN (was 39) */
 #define BOARD_PIN_BTN_RIGHT  38
 #define BOARD_PIN_BTN_OK     0  /* OK/Select — also the BOOT strapping pin */
 #define BOARD_PIN_BTN_BACK   21 /* Escape/Power */
@@ -231,6 +233,9 @@
 #define BOARD_RFID_UART_NUM 1
 
 /* ---- Battery / charger (TP4056 has no I2C; INA219 is the gauge) ---- */
+/* OTA update source: this repo's GitHub Pages. Publish latest/version.txt
+ * and latest/furi_esp32.bin there (see .github/workflows/ota-pages.yml). */
+#define BOARD_FW_OTA_URL "https://mgd1lan.github.io/flippercore"
 #define FURI_HAL_POWER_VIRTUAL_CAPACITY_MAH (2000U)
 #define BQ25896_CHARGE_LIMIT 1024
 #define BQ27220_ADDR 0x55
