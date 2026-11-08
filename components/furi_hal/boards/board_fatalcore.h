@@ -28,7 +28,7 @@
 #pragma once
 
 /* ---- Board metadata ---- */
-#define BOARD_NAME   "Fatal Core"
+#define BOARD_NAME   "Fatalcore"
 #define BOARD_ID     "fatalcore"
 #define BOARD_TARGET "esp32s3"
 
