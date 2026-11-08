@@ -101,20 +101,26 @@ jobs:
 
       - name: Publish to gh-pages
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages || true
-          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
-            git checkout -B gh-pages origin/gh-pages
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Publish from a separate clone: the build workspace has modified
+          # tracked files (sdkconfig, dependencies.lock) and cannot be switched.
+          PUB="${RUNNER_TEMP}/ota-pages-pub"
+          rm -rf "$PUB"
+          if git clone --depth 1 --branch gh-pages "$REMOTE" "$PUB" 2>/dev/null; then
+            echo "publishing on top of existing gh-pages"
           else
-            git checkout --orphan gh-pages
-            git rm -rf . >/dev/null 2>&1 || true
+            git clone --depth 1 "$REMOTE" "$PUB"
+            git -C "$PUB" checkout --orphan gh-pages
+            git -C "$PUB" rm -rf . >/dev/null 2>&1 || true
           fi
-          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name ota -exec rm -rf {} +
-          mv ota/latest ./latest
-          rmdir ota
-          git add -A
-          git commit -m "OTA ${GITHUB_REF_NAME:-manual} (${GITHUB_SHA::7})" || echo "no changes"
-          git push origin gh-pages
+          find "$PUB" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r "${GITHUB_WORKSPACE}/ota/latest" "$PUB/latest"
+          git -C "$PUB" add -A
+          git -C "$PUB" commit -m "OTA ${GITHUB_REF_NAME:-manual} (${GITHUB_SHA::7})" || echo "no changes"
+          git -C "$PUB" push origin gh-pages
