@@ -12,32 +12,38 @@
 #include <furi_hal_bt.h>
 #include <furi_hal_info.h>
 
+#include <toolbox/fw_version.h>
+
 typedef DialogMessageButton (*AboutDialogScreen)(DialogsApp* dialogs, DialogMessage* message);
 
-static DialogMessageButton product_screen(DialogsApp* dialogs, DialogMessage* message) {
+/* First screen: firmware name. */
+static DialogMessageButton firmware_screen(DialogsApp* dialogs, DialogMessage* message) {
     DialogMessageButton result;
 
-    FuriString* screen_header = furi_string_alloc_printf(
-        "Product: %s\n"
-        "Model: %s",
-        furi_hal_version_get_model_name(),
-        furi_hal_version_get_model_code());
-
-    FuriString* screen_text = furi_string_alloc_printf(
-        "FCC ID: %s\n"
-        "IC: %s",
-        furi_hal_version_get_fcc_id(),
-        furi_hal_version_get_ic_id());
-
-    dialog_message_set_header(
-        message, furi_string_get_cstr(screen_header), 0, 0, AlignLeft, AlignTop);
+    dialog_message_set_header(message, "Firmware:", 0, 0, AlignLeft, AlignTop);
     dialog_message_set_text(
-        message, furi_string_get_cstr(screen_text), 0, 26, AlignLeft, AlignTop);
+        message, FURI_ESP32_VERSION_NAME, 0, 13, AlignLeft, AlignTop);
     result = dialog_message_show(dialogs, message);
     dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
     dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
 
-    furi_string_free(screen_header);
+    return result;
+}
+
+/* Second screen: device name. */
+static DialogMessageButton device_screen(DialogsApp* dialogs, DialogMessage* message) {
+    DialogMessageButton result;
+
+    FuriString* screen_text = furi_string_alloc_printf(
+        "%s\n%s", FURI_ESP32_DEVICE_NAME, furi_hal_version_get_model_code());
+
+    dialog_message_set_header(message, "Device:", 0, 0, AlignLeft, AlignTop);
+    dialog_message_set_text(
+        message, furi_string_get_cstr(screen_text), 0, 13, AlignLeft, AlignTop);
+    result = dialog_message_show(dialogs, message);
+    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
+    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
+
     furi_string_free(screen_text);
 
     return result;
@@ -64,52 +70,6 @@ static DialogMessageButton compliance_screen(DialogsApp* dialogs, DialogMessage*
     const char* screen_text = "For all compliance\n"
                               "certificates, please visit:\n"
                               "www.flipp.dev/compliance";
-
-    dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton unleashed_info_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_header = "Unleashed Firmware\n";
-
-    const char* screen_text = "Is for experimental purposes\nonly "
-                              "and is not meant for any\nillegal use! "
-                              "We do not condone\nany illegal activity.";
-
-    dialog_message_set_header(message, screen_header, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, screen_text, 0, 11, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton unleashed_info_screen2(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_text =
-        "This firmware is free and\ndistributed under\nthe OpenSource license.\n"
-        "If you paid any money for it\n- you got scammed.";
-
-    dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton unleashed_info_screen3(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_text = "Community apps included in\nall builds except `c` build\n"
-                              "For updates and more visit:\n"
-                              "github.com/DarkFlippers";
 
     dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
     result = dialog_message_show(dialogs, message);
@@ -190,14 +150,12 @@ static DialogMessageButton fw_version_screen(DialogsApp* dialogs, DialogMessage*
 }
 
 const AboutDialogScreen about_screens[] = {
-    unleashed_info_screen,
-    unleashed_info_screen2,
-    unleashed_info_screen3,
-    product_screen,
-    compliance_screen,
-    address_screen,
+    firmware_screen,
+    device_screen,
+    fw_version_screen,
     hw_version_screen,
-    fw_version_screen};
+    compliance_screen,
+    address_screen};
 
 int32_t about_settings_app(void* p) {
     UNUSED(p);
