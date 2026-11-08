@@ -4,6 +4,10 @@
 #
 #  Reference only: board_fatalcore.h is hand-maintained, it is NOT
 #  generated from this file (unlike Pinout.txt / board_DIY.h).
+#
+#  Source of truth for the hardware: https://github.com/Teapot174/fatalcore
+#  (hardware/fatalcore_pinout.txt, hardware/fatalcore_BOM.txt). This file is
+#  kept in sync with that pinout.
 # ============================================================
 
 # --- Shared SPI bus (LCD + SD + CC1101 + NRF24 + ST25R3916) ---
