@@ -33,11 +33,10 @@
 #define BOARD_TARGET "esp32s3"
 
 /* ---- Buttons (active low, wired to GND) ----
- * Fatal Core: physical LEFT and DOWN pads are crossed on this board revision,
- * so swap their GPIOs to match the silkscreen/expected behavior. */
+ * Fatal Core: DOWN = GPIO40, LEFT = GPIO39 (verified on hardware; do not swap). */
 #define BOARD_PIN_BTN_UP     41
-#define BOARD_PIN_BTN_DOWN   39  /* swapped with LEFT (was 40) */
-#define BOARD_PIN_BTN_LEFT   40  /* swapped with DOWN (was 39) */
+#define BOARD_PIN_BTN_DOWN   40
+#define BOARD_PIN_BTN_LEFT   39
 #define BOARD_PIN_BTN_RIGHT  38
 #define BOARD_PIN_BTN_OK     0  /* OK/Select — also the BOOT strapping pin */
 #define BOARD_PIN_BTN_BACK   21 /* Escape/Power */
