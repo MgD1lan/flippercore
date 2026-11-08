@@ -32,7 +32,7 @@ int32_t about_app(void* p) {
         AlignCenter,
         AlignTop,
         FontPrimary,
-        "Flipper Zero\nESP32 Port");
+        FURI_ESP32_DEVICE_NAME);
 
     widget_add_string_multiline_element(
         app->widget,
@@ -41,7 +41,7 @@ int32_t about_app(void* p) {
         AlignCenter,
         AlignTop,
         FontSecondary,
-        "T-Embed CC1101\n"
+        "ESP32-S3 port\n"
         "FW: " FURI_ESP32_VERSION_FULL);
 
     View* widget_view = widget_get_view(app->widget);

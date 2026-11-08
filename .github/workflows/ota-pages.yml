@@ -80,9 +80,21 @@ jobs:
           # Board defaults are mandatory: without them the image uses the
           # generic config (no board pins, bigger binary) and would not match
           # the image that is validated on hardware.
+          #
+          # set-target is mandatory too: sdkconfig.defaults still pins
+          # CONFIG_IDF_TARGET="esp32c6" for the upstream default board, and a
+          # fresh checkout has no sdkconfig to inherit the S3 target from.
+          # Without this step the release workflow builds an ESP32-C6 image.
+          idf.py -B build_fatalcore -DFLIPPER_BOARD=fatalcore \
+            -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.fatalcore" \
+            set-target esp32s3
           idf.py -B build_fatalcore -DFLIPPER_BOARD=fatalcore \
             -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.fatalcore" \
             build partition-table
+          # Refuse to publish a build for the wrong silicon.
+          grep -q '^CONFIG_IDF_TARGET="esp32s3"$' sdkconfig
+          esptool.py image_info --version 2 build_fatalcore/furi_esp32.bin \
+            | grep -q 'Detected image type: ESP32-S3'
 
       - name: Prepare OTA payload
         shell: bash
