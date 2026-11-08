@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fatal Core — диагностика NFC (ST25R3916)</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #ff7a1a;
+    --accent-2: #ffb347;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(1200px 600px at 50% -10%, #1b2430 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 48px 20px 64px;
+  }
+  main { width: 100%; max-width: 760px; }
+  header { text-align: center; margin-bottom: 36px; }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 36px;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub { color: var(--muted); margin: 0; }
+  .badge {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+  .install-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+  }
+  esp-web-install-button {
+    --esp-tools-button-color: var(--accent);
+    --esp-tools-button-text-color: #12161c;
+    --esp-tools-button-border-radius: 10px;
+  }
+  .hint { color: var(--muted); font-size: 14px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  ol, ul { margin: 0; padding-left: 22px; }
+  li { margin-bottom: 8px; }
+  li:last-child { margin-bottom: 0; }
+  code {
+    background: #0b0f14;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 14px;
+  }
+  pre {
+    background: #0b0f14;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .warn { border-color: #6b3f10; background: #1c1508; }
+  .warn h2 { color: var(--accent-2); }
+  a { color: var(--accent-2); }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 28px; }
+  footer a { color: var(--muted); }
+</style>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Диагностика NFC</h1>
+    <p class="sub">Отладочный образ Fatal Core для проверки ST25R3916</p>
+    <div class="badge">2.0.1-diag · bit-bang probe + IRQ ADC probe</div>
+  </header>
+
+  <section class="card">
+    <div class="install-wrap">
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="activate">Прошить диагностический образ</button>
+        <span slot="unsupported" class="hint">Браузер не поддерживает Web Serial. Открой страницу в Chrome или Edge на компьютере.</span>
+        <span slot="not-allowed" class="hint">Доступ к USB-порту запрещён. Разреши доступ и попробуй снова.</span>
+      </esp-web-install-button>
+      <p class="hint">Порядок входа в режим прошивки — такой же, как на <a href="../">основной странице</a>: полностью выключить → зажать среднюю кнопку → подключить USB → держать 2–3 с → отпустить.</p>
+    </div>
+  </section>
+
+  <section class="card warn">
+    <h2>Чем этот образ отличается</h2>
+    <p class="hint">Это тот же код, что и обычная прошивка, плюс два отладочных замера, которые в релизе выключены:</p>
+    <ul>
+      <li><code>BOARD_NFC_EARLY_PROBE</code> — опрос ST25R3916 в самом начале загрузки, до инициализации SD-карты и дисплея, пока шина SPI2 ещё никем не тронута.</li>
+      <li><code>BOARD_NFC_BITBANG_PROBE</code> — опрашивает чип по SPI вручную, побитово, минуя аппаратный SPI. Показывает, живы ли линии SCK/MOSI/MISO и отвечает ли чип вообще.</li>
+      <li><code>BOARD_NFC_IRQ_ADC_PROBE</code> — измеряет напряжение на линии IRQ (GPIO12) через ADC при разных подтяжках. Это замена мультиметра: видно, притянута ли линия чипом, резистором или висит в воздухе.</li>
+    </ul>
+    <p class="hint">Ничего не портит и не пишет на SD. После диагностики прошей обычную прошивку с <a href="../">главной страницы</a>.</p>
+  </section>
+
+  <section class="card">
+    <h2>Что смотреть в логе</h2>
+    <p class="hint">Открой порт на скорости 115200 (<code>idf.py monitor -p /dev/ttyACM0</code>, <code>picocom</code>, или монитор порта) и найди строки <code>[FuriHalNfc]</code> при запуске приложения NFC:</p>
+<pre>bb cs#1: cs_high=0 cs_low=0 again_high=0 (0,1,0 = chip saw CS)
+bb probe: IC_IDENTITY mode1=0x.. mode3=0x.. nopull=0x.. (want 0x2A)
+irq adc: float=..mV pullup=..mV pulldown=..mV
+irq adc: sanity GPIO1 (IR RX, idles high) = ..mV
+init: attempt N: io2=... osc_ok=... aux=... IC_IDENTITY=...  </pre>
+    <ul>
+      <li><b>IC_IDENTITY=0x2A</b> — чип живой, проблема в конфигурации/тайминге.</li>
+      <li><b>bb probe = 0x2A, а обычный SPI = 0x00</b> — чип в порядке, проблема в шине/тайминге, а не в модуле.</li>
+      <li><b>ic_id = 0x00 везде и pullup на IRQ &lt; 100 мВ</b> — линию активно тянет вниз сам чип → <b>питание есть, чип живой, но не понимает команды</b>.</li>
+      <li><b>pullup на IRQ ≈ 600–2500 мВ</b> — линию держит только резистор → <b>чип не питается или оторвана дорожка</b>.</li>
+      <li><b>pullup на IRQ ≈ 3300 мВ</b> — линия IRQ ни к чему не подключена (провод отвалился совсем).</li>
+      <li><b>sanity на IR RX не 2000–3300 мВ</b> — сам замер ADC врёт, цифрам выше верить нельзя.</li>
+      <li><b>IC_IDENTITY меняется при шевелении проводов</b> — плохой контакт (CS=11, IRQ=12, SCK=17, MOSI=18, MISO=8, 3V3, GND).</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Возврат на релиз</h2>
+    <p class="hint">Прошей образ 2.0.1 с <a href="../">https://mgd1lan.github.io/flippercore</a> — он и обновляется по OTA с этого же сайта.</p>
+  </section>
+
+  <footer>
+    <p><a href="../">← основная страница прошивки</a> · <a href="https://github.com/MgD1lan/flippercore">исходники</a></p>
+  </footer>
+</main>
+</body>
+</html>
