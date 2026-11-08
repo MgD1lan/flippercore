@@ -238,6 +238,27 @@ Iso14443_3aError
         activated = (instance->state == Iso14443_3aPollerStateActivated);
     } while(false);
 
+    if(activated) {
+        const Iso14443_3aData* d = instance->data;
+        FURI_LOG_I(
+            TAG,
+            "activated: ATQA=%02X%02X SAK=%02X UID_len=%u UID=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
+            d->atqa[0],
+            d->atqa[1],
+            d->sak,
+            d->uid_len,
+            d->uid[0],
+            d->uid[1],
+            d->uid[2],
+            d->uid[3],
+            d->uid[4],
+            d->uid[5],
+            d->uid[6],
+            d->uid[7],
+            d->uid[8],
+            d->uid[9]);
+    }
+
     if(activated && iso14443_3a_data) {
         *iso14443_3a_data = *instance->data;
     }

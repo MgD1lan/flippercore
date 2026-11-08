@@ -95,6 +95,8 @@ void nfc_scanner_state_handler_try_base_pollers(NfcScanner* instance) {
         NfcPoller* poller = nfc_poller_alloc(instance->nfc, instance->current_protocol);
         bool protocol_detected = nfc_poller_detect(poller);
         nfc_poller_free(poller);
+        FURI_LOG_I(
+            TAG, "base protocol %d detected=%d", instance->current_protocol, protocol_detected);
 
         if(protocol_detected) {
             instance->detected_protocols[instance->detected_protocols_num] =
@@ -142,6 +144,8 @@ void nfc_scanner_state_handler_detect_children_protocols(NfcScanner* instance) {
     NfcPoller* poller = nfc_poller_alloc(instance->nfc, instance->current_protocol);
     bool protocol_detected = nfc_poller_detect(poller);
     nfc_poller_free(poller);
+    FURI_LOG_I(
+        TAG, "child protocol %d detected=%d", instance->current_protocol, protocol_detected);
 
     if(protocol_detected) {
         instance->detected_protocols[instance->detected_protocols_num] =

@@ -79,6 +79,7 @@ static NfcCommand iso14443_3a_poller_run(NfcGenericEvent event, void* context) {
                 instance->iso14443_3a_event_data.error = error;
                 command = instance->callback(instance->general_event, instance->context);
             } else {
+                FURI_LOG_I(TAG, "activate failed: %d", error);
                 instance->iso14443_3a_event.type = Iso14443_3aPollerEventTypeError;
                 instance->iso14443_3a_event_data.error = error;
                 command = instance->callback(instance->general_event, instance->context);

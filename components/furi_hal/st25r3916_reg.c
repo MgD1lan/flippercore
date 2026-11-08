@@ -48,8 +48,24 @@
 
 #define ST25R3916_SPI_TIMEOUT 200
 
+static const char* TAG = "St25r3916Reg";
+
 static uint8_t st25r3916_tx_buf[ST25R3916_BUF_LEN];
 static uint8_t st25r3916_rx_buf[ST25R3916_BUF_LEN];
+
+/* furi_hal_spi_bus_trx() zero-fills the RX buffer and still reports success
+ * when the ESP-IDF device handle is missing, and every caller here ignores its
+ * return value. That combination looks exactly like a chip that answers 0x00 to
+ * every register read, so make the distinction visible. */
+static void st25r3916_check_handle(const FuriHalSpiBusHandle* handle) {
+    if(!handle->initialized || !handle->device) {
+        FURI_LOG_W(
+            TAG,
+            "SPI device not usable (initialized=%d device=%p): transfer is a no-op",
+            (int)handle->initialized,
+            handle->device);
+    }
+}
 
 /** Write `prefix` (one or two command bytes) followed by `values` in a single
  *  CS-low SPI transaction. */
@@ -61,6 +77,8 @@ static void st25r3916_spi_write(
     size_t length) {
     furi_check(prefix_len <= 2);
     furi_check((prefix_len + length) <= sizeof(st25r3916_tx_buf));
+
+    st25r3916_check_handle(handle);
 
     memcpy(st25r3916_tx_buf, prefix, prefix_len);
     if(length) memcpy(&st25r3916_tx_buf[prefix_len], values, length);
@@ -78,6 +96,8 @@ static void st25r3916_spi_read(
     size_t length) {
     furi_check(prefix_len <= 2);
     furi_check((prefix_len + length) <= sizeof(st25r3916_tx_buf));
+
+    st25r3916_check_handle(handle);
 
     memcpy(st25r3916_tx_buf, prefix, prefix_len);
     memset(&st25r3916_tx_buf[prefix_len], 0xFF, length);
