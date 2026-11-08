@@ -838,9 +838,13 @@ static bool sd_prepare_card(void) {
                 real_freq_khz,
                 (unsigned long)sd_card->max_freq_khz,
                 esp_err_to_name(freq_err));
-            /* Diagnostic: is an idle MISO (all CS high) actually pulled up, or
-             * is some chip holding it low? An idle-low MISO makes the SDSPI
-             * ready-poll burn its full 40 ms timeout on every command. */
+            /* Bring-up diagnostic: is an idle MISO (all CS high) actually
+             * pulled up, or is some chip holding it low? An idle-low MISO
+             * makes the SDSPI ready-poll burn its full 40 ms timeout on every
+             * command. Kept behind a switch: it toggles the pull resistors on
+             * the shared MISO line and briefly drives it, neither of which
+             * belongs in a normal boot. */
+#ifdef BOARD_SD_MISO_PROBE
             const gpio_num_t miso = (gpio_num_t)gpio_sdcard_miso.pin;
             gpio_set_pull_mode(miso, GPIO_PULLUP_ONLY);
             const int miso_pullup = gpio_get_level(miso);
@@ -865,6 +869,7 @@ static bool sd_prepare_card(void) {
                 miso_pullup_settled,
                 miso_pulldown,
                 miso_driven_high);
+#endif
 #ifdef BOARD_SD_WRITE_SELFTEST
             sd_write_selftest();
 #endif
