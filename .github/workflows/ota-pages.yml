@@ -123,8 +123,26 @@ jobs:
             git -C "$PUB" checkout --orphan gh-pages
             git -C "$PUB" rm -rf . >/dev/null 2>&1 || true
           fi
-          find "$PUB" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          # Only the payload is regenerated here. The browser flasher
+          # (index.html, manifest.json) and the diagnostic page live on the
+          # same branch by hand and must survive a publish.
+          rm -rf "$PUB/latest" "$PUB/firmware"
           cp -r "${GITHUB_WORKSPACE}/ota/latest" "$PUB/latest"
+          mkdir -p "$PUB/firmware"
+          cp "${GITHUB_WORKSPACE}"/ota/latest/*.bin "$PUB/firmware/"
+
+          VERSION='${{ steps.ver.outputs.version }}'
+          RAW_SIZE=$(stat -c%s "${GITHUB_WORKSPACE}/ota/latest/furi_esp32.bin")
+          SIZE="$RAW_SIZE"
+
+          if [ -f "$PUB/manifest.json" ]; then
+            sed -i -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*/\1${VERSION}/" "$PUB/manifest.json"
+          fi
+          if [ -f "$PUB/index.html" ]; then
+            sed -i -E "s/версия [0-9]+\.[0-9]+\.[0-9]+/версия ${VERSION}/" "$PUB/index.html"
+            sed -i -E "s/<b>[0-9 ]+<\/b> байт/<b>${SIZE}<\/b> байт/" "$PUB/index.html"
+          fi
+
           git -C "$PUB" add -A
           git -C "$PUB" commit -m "OTA ${GITHUB_REF_NAME:-manual} (${GITHUB_SHA::7})" || echo "no changes"
           git -C "$PUB" push origin gh-pages

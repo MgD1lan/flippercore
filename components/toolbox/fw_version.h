@@ -1,5 +1,5 @@
 #pragma once
 
-#define FURI_ESP32_VERSION      "2.0.1"
+#define FURI_ESP32_VERSION      "2.0.2"
 #define FURI_ESP32_VERSION_NAME "Fatal Core"
 #define FURI_ESP32_VERSION_FULL FURI_ESP32_VERSION " - " FURI_ESP32_VERSION_NAME
