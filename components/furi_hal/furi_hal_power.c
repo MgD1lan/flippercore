@@ -1,6 +1,7 @@
 #include "furi_hal_power.h"
 #include "furi_hal_bq27220.h"
 #include "furi_hal_bq25896.h"
+#include "furi_hal_ina219.h"
 #include "furi_hal_display.h"
 #include "boards/board.h"
 
@@ -213,6 +214,11 @@ static void furi_hal_power_ensure_initialized(void) {
 
     adc_unit_t adc_unit = ADC_UNIT_1;
     adc_channel_t adc_channel = ADC_CHANNEL_0;
+    /* Boards without a battery divider map this pin to UINT16_MAX; skip the
+     * voltage ADC silently and let the fuel gauge provide the readings. */
+    if(gpio_battery_sense.pin == UINT16_MAX) {
+        return;
+    }
     const esp_err_t map_result =
         adc_oneshot_io_to_channel(gpio_battery_sense.pin, &adc_unit, &adc_channel);
     if(map_result != ESP_OK) {
@@ -258,14 +264,34 @@ static bool furi_hal_power_is_usb_present(void) {
 
 static void furi_hal_power_refresh_sample(void) {
     furi_hal_power_ensure_initialized();
-    if(!furi_hal_power.adc_ready) {
-        furi_hal_power.last_sample_ok = false;
-        return;
-    }
 
     const int64_t now = esp_timer_get_time();
     if((now - furi_hal_power.last_sample_us) < FURI_HAL_POWER_SAMPLE_REFRESH_US &&
        furi_hal_power.last_sample_ok) {
+        return;
+    }
+
+    /* INA219 (TP4056 boards without a fuel gauge) is the primary source when
+     * it answered on the bus. Charge percentage is still derived from the
+     * measured bus voltage by furi_hal_power_get_pct(). */
+    if(furi_hal_ina219_is_present()) {
+        const uint16_t battery_mv = furi_hal_ina219_get_voltage_mv();
+        if(battery_mv == 0) {
+            furi_hal_power.last_sample_ok = false;
+            return;
+        }
+        float voltage = (float)battery_mv / 1000.0f;
+        if(voltage > 6.0f) voltage = 6.0f;
+        furi_hal_power.last_supply_voltage = voltage;
+        furi_hal_power.last_battery_voltage = voltage;
+        furi_hal_power.has_battery_reading = true;
+        furi_hal_power.last_sample_us = now;
+        furi_hal_power.last_sample_ok = true;
+        return;
+    }
+
+    if(!furi_hal_power.adc_ready) {
+        furi_hal_power.last_sample_ok = false;
         return;
     }
 
@@ -326,17 +352,15 @@ void furi_hal_power_init(void) {
     furi_hal_power_ensure_initialized();
 
 #if CONFIG_PM_ENABLE
-    /* Dynamic frequency scaling: let the CPU idle at 80 MHz and ramp to 160 MHz
-     * only while a peripheral driver (SPI / RMT / I2C ...) or a timing-critical
-     * section (insomnia) needs it. This roughly halves idle CPU draw, which is
-     * the dominant battery sink on this port. Nothing ever lowered the fixed
-     * 160 MHz clock before.
-     *
-     * DFS 80-160 MHz plus automatic light sleep, the latter gated by the
-     * NO_LIGHT_SLEEP lock below. min_freq is 80 (not 40) so APB stays
-     * PLL-sourced and the LEDC backlight PWM and I2C timing don't shift. */
+    /* Dynamic frequency scaling: the CPU idles at 80 MHz and ramps up to the
+     * chip maximum (240 MHz) while any work is pending. max_freq is 240 rather
+     * than 160 because the GUI redraw path is CPU-bound as well: the framebuffer
+     * scaling loop plus per-pixel colour expansion is a measurable part of every
+     * frame, and at 160 MHz input latency and menu scrolling are visibly worse.
+     * min_freq is 80 (not 40) so APB stays PLL-sourced and the LEDC backlight
+     * PWM and I2C timing don't shift. */
     esp_pm_config_t pm_config = {
-        .max_freq_mhz = 160,
+        .max_freq_mhz = 240,
         .min_freq_mhz = 80,
         .light_sleep_enable = true,
     };
@@ -392,6 +416,7 @@ void furi_hal_power_init(void) {
     /* BQ27220 first (needs clean I2C bus), then BQ25896 */
     furi_hal_bq27220_init();
     furi_hal_bq25896_init();
+    furi_hal_ina219_init();
     furi_hal_power_refresh_sample();
     if(furi_hal_bq27220_is_present()) {
         ESP_LOGI(TAG, "Fuel gauge: BQ27220 (%umV, %u%%)",
@@ -401,10 +426,15 @@ void furi_hal_power_init(void) {
         ESP_LOGI(TAG, "Charger: BQ25896 (VBUS=%umV, VREG=%umV)",
             furi_hal_bq25896_get_vbus_voltage_mv(), furi_hal_bq25896_get_vreg_voltage_mv());
     }
+    if(furi_hal_ina219_is_present()) {
+        ESP_LOGI(TAG, "Fuel gauge: INA219 (%umV, %dmA)",
+            furi_hal_ina219_get_voltage_mv(), (int)furi_hal_ina219_get_current_ma());
+    }
 }
 
 bool furi_hal_power_gauge_is_ok(void) {
     if(furi_hal_bq27220_is_present()) return true;
+    if(furi_hal_ina219_is_present()) return true;
     if(!furi_hal_power.adc_handle) return true;
     furi_hal_power_refresh_sample();
     return furi_hal_power.last_sample_ok;
@@ -498,7 +528,12 @@ uint8_t furi_hal_power_get_pct(void) {
     if(furi_hal_bq27220_is_present()) {
         return furi_hal_bq27220_get_charge_pct();
     }
-    if(!furi_hal_power.adc_handle) {
+    /* INA219 has no coulomb counter; derive percentage from bus voltage. */
+    if(furi_hal_ina219_is_present()) {
+        const uint16_t mv = furi_hal_ina219_get_voltage_mv();
+        return mv ? furi_hal_power_voltage_to_pct((float)mv / 1000.0f) : 0;
+    }
+    if(!furi_hal_power.adc_handle && !furi_hal_ina219_is_present()) {
         return 100; /* No ADC, no fuel gauge → USB powered */
     }
     const float battery_voltage = furi_hal_power_get_estimated_battery_voltage();
@@ -523,6 +558,11 @@ bool furi_hal_power_is_charging(void) {
     }
     if(furi_hal_bq27220_is_present()) {
         return furi_hal_bq27220_is_charging();
+    }
+    /* No charger IC on TP4056 boards: current flowing into the pack means the
+     * charger is active. A small threshold rejects INA219 offset noise. */
+    if(furi_hal_ina219_is_present()) {
+        return furi_hal_ina219_get_current_ma() > 20;
     }
     furi_hal_power_refresh_sample();
     return furi_hal_power_is_usb_present() && (furi_hal_power.suppress_charge == 0);

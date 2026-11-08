@@ -48,6 +48,7 @@ BOARDS = {
     "waveshare_c6_1.47": ("waveshare_c6_1.47",     "esp32c6", "build_waveshare_c6_1.47"),
     "thormini":          ("thormini",              "esp32s3", "build_thormini"),
     "thorchimera":       ("thorchimera",           "esp32s3", "build_thorchimera"),
+    "fatalcore":         ("fatalcore",             "esp32s3", "build_fatalcore"),
 }
 
 REPO_ROOT = Path(__file__).resolve().parent
