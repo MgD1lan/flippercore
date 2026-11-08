@@ -1,6 +1,7 @@
 #include "wlan_fw_update.h"
 
 #include <furi.h>
+#include <board.h>
 #include <storage/storage.h>
 #include <toolbox/fw_version.h>
 #include <string.h>
