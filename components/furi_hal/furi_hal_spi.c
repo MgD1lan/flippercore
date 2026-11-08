@@ -252,6 +252,19 @@ void furi_hal_spi_bus_handle_deinit(const FuriHalSpiBusHandle* handle) {
     if(mutable_handle->device) {
         spi_bus_remove_device((spi_device_handle_t)mutable_handle->device);
         mutable_handle->device = NULL;
+
+        /* spi_bus_remove_device() ends with gpio_reset_pin() on the CS line,
+         * which leaves it as a high-Z input behind the weak (~45k) internal
+         * pull-up. On a shared bus that is not a chip select: the other
+         * devices keep clocking SCK at 10-40 MHz, and the coupling can dip a
+         * weakly pulled line far enough for a slave to sample stray clock
+         * edges as a command. (The ST25R3916 latches a stray register write
+         * across MCU resets -- it has no reset line on this board.) Park CS as
+         * a plain output driving high until something re-adds the device. */
+        if(furi_hal_spi_pin_valid(handle->cs)) {
+            furi_hal_gpio_write(handle->cs, true);
+            furi_hal_gpio_init_simple(handle->cs, GpioModeOutputPushPull);
+        }
     }
     mutable_handle->initialized = false;
 }
