@@ -361,17 +361,19 @@ void nfc_start(Nfc* instance, NfcEventCallback callback, void* context) {
     furi_thread_start(instance->worker_thread);
 }
 
-void nfc_stop(Nfc* instance) {
+static void nfc_stop_impl(Nfc* instance, bool request_abort) {
     furi_check(instance);
     furi_check(instance->state == NfcStateRunning);
 
-    /* Wake the worker out of any FURI_HAL_NFC_EVENT_WAIT_FOREVER wait in both
-     * modes. furi_hal_nfc_poller_wait_event() honours FuriHalNfcEventAbortRequest
-     * like any other event bit, but the poller path never requested it, so a
-     * worker parked on a stalled chip/card made the furi_thread_join() below
-     * hang the calling (GUI) thread forever - a total freeze on exiting any
-     * NFC app. */
-    furi_hal_nfc_abort();
+    if(request_abort) {
+        /* Wake the worker out of any FURI_HAL_NFC_EVENT_WAIT_FOREVER wait in both
+         * modes. furi_hal_nfc_poller_wait_event() honours FuriHalNfcEventAbortRequest
+         * like any other event bit, but the poller path never requested it, so a
+         * worker parked on a stalled chip/card made the furi_thread_join() below
+         * hang the calling (GUI) thread forever - a total freeze on exiting any
+         * NFC app. */
+        furi_hal_nfc_abort();
+    }
 
     /* On ESP32 with FreeRTOS preemptive scheduling, view_dispatcher_send_custom_event
      * from a worker callback can trigger synchronous event processing in the main thread
@@ -388,6 +390,14 @@ void nfc_stop(Nfc* instance) {
     }
 
     instance->state = NfcStateIdle;
+}
+
+void nfc_stop(Nfc* instance) {
+    nfc_stop_impl(instance, true);
+}
+
+void nfc_stop_no_abort(Nfc* instance) {
+    nfc_stop_impl(instance, false);
 }
 
 NfcError nfc_listener_tx(Nfc* instance, const BitBuffer* tx_buffer) {
