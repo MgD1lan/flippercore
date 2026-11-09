@@ -174,6 +174,12 @@ bool nfc_worker_poller_start_handler(Nfc* instance) {
     if(instance->guard_time_us) {
         furi_hal_nfc_timer_block_tx_start_us(instance->guard_time_us);
         FuriHalNfcEvent event = furi_hal_nfc_poller_wait_event(FURI_HAL_NFC_EVENT_WAIT_FOREVER);
+        if(event & FuriHalNfcEventAbortRequest) {
+            /* nfc_stop() from another thread: abandon the guard-time wait (and
+             * skip the expiry assert below) and unwind through the stop state. */
+            instance->poller_state = NfcPollerStateStop;
+            return false;
+        }
         furi_assert(event & FuriHalNfcEventTimerBlockTxExpired);
     }
     instance->poller_state = NfcPollerStateReady;
@@ -237,6 +243,11 @@ static int32_t nfc_worker_poller(void* context) {
     bool exit = false;
     while(!exit) {
         exit = nfc_worker_poller_state_handlers[instance->poller_state](instance);
+        /* Pace the state loop: when the NFC chip stops answering, handlers
+         * return instantly and this loop - running at the highest thread
+         * priority - would spin flat-out and starve the entire system.
+         * 1 ms per state round is invisible to card polling. */
+        furi_delay_ms(1);
     }
 
     FURI_LOG_I(TAG, "poller worker exit");
@@ -335,9 +346,13 @@ void nfc_stop(Nfc* instance) {
     furi_check(instance);
     furi_check(instance->state == NfcStateRunning);
 
-    if(instance->mode == NfcModeListener) {
-        furi_hal_nfc_abort();
-    }
+    /* Wake the worker out of any FURI_HAL_NFC_EVENT_WAIT_FOREVER wait in both
+     * modes. furi_hal_nfc_poller_wait_event() honours FuriHalNfcEventAbortRequest
+     * like any other event bit, but the poller path never requested it, so a
+     * worker parked on a stalled chip/card made the furi_thread_join() below
+     * hang the calling (GUI) thread forever - a total freeze on exiting any
+     * NFC app. */
+    furi_hal_nfc_abort();
 
     /* On ESP32 with FreeRTOS preemptive scheduling, view_dispatcher_send_custom_event
      * from a worker callback can trigger synchronous event processing in the main thread
@@ -381,6 +396,12 @@ static NfcError nfc_poller_trx_state_machine(Nfc* instance, uint32_t fwt_fc) {
 
     while(true) {
         event = furi_hal_nfc_poller_wait_event(FURI_HAL_NFC_EVENT_WAIT_FOREVER);
+        if(event & FuriHalNfcEventAbortRequest) {
+            /* nfc_stop() while a transaction is in flight: abandon it so the
+             * poller callback chain unwinds and sees the stop request. */
+            error = NfcErrorTimeout;
+            break;
+        }
         if(event & FuriHalNfcEventTimerBlockTxExpired) {
             if(instance->comm_state == NfcCommStateWaitBlockTxTimer) {
                 instance->comm_state = NfcCommStateReadyTx;
@@ -443,7 +464,9 @@ NfcError nfc_iso14443a_poller_trx_custom_parity(
         while(furi_hal_nfc_timer_block_tx_is_running()) {
             FuriHalNfcEvent event =
                 furi_hal_nfc_poller_wait_event(FURI_HAL_NFC_EVENT_WAIT_FOREVER);
-            if(event & FuriHalNfcEventTimerBlockTxExpired) break;
+            if(event & (FuriHalNfcEventTimerBlockTxExpired | FuriHalNfcEventAbortRequest)) {
+                break;
+            }
         }
         bit_buffer_write_bytes_with_parity(
             tx_buffer, instance->tx_buffer, sizeof(instance->tx_buffer), &instance->tx_bits);
@@ -496,7 +519,9 @@ NfcError
         while(furi_hal_nfc_timer_block_tx_is_running()) {
             FuriHalNfcEvent event =
                 furi_hal_nfc_poller_wait_event(FURI_HAL_NFC_EVENT_WAIT_FOREVER);
-            if(event & FuriHalNfcEventTimerBlockTxExpired) break;
+            if(event & (FuriHalNfcEventTimerBlockTxExpired | FuriHalNfcEventAbortRequest)) {
+                break;
+            }
         }
         error =
             furi_hal_nfc_poller_tx(bit_buffer_get_data(tx_buffer), bit_buffer_get_size(tx_buffer));
@@ -561,7 +586,9 @@ NfcError nfc_iso14443a_poller_trx_short_frame(
         while(furi_hal_nfc_timer_block_tx_is_running()) {
             FuriHalNfcEvent event =
                 furi_hal_nfc_poller_wait_event(FURI_HAL_NFC_EVENT_WAIT_FOREVER);
-            if(event & FuriHalNfcEventTimerBlockTxExpired) break;
+            if(event & (FuriHalNfcEventTimerBlockTxExpired | FuriHalNfcEventAbortRequest)) {
+                break;
+            }
         }
         error = furi_hal_nfc_iso14443a_poller_trx_short_frame(short_frame);
         if(error != FuriHalNfcErrorNone) {
@@ -608,7 +635,9 @@ NfcError nfc_iso14443a_poller_trx_sdd_frame(
         while(furi_hal_nfc_timer_block_tx_is_running()) {
             FuriHalNfcEvent event =
                 furi_hal_nfc_poller_wait_event(FURI_HAL_NFC_EVENT_WAIT_FOREVER);
-            if(event & FuriHalNfcEventTimerBlockTxExpired) break;
+            if(event & (FuriHalNfcEventTimerBlockTxExpired | FuriHalNfcEventAbortRequest)) {
+                break;
+            }
         }
         error = furi_hal_nfc_iso14443a_tx_sdd_frame(
             bit_buffer_get_data(tx_buffer), bit_buffer_get_size(tx_buffer));
