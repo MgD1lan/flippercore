@@ -251,6 +251,16 @@ static esp_err_t deinit_slot(slot_info_t *slot)
 {
     esp_err_t err = ESP_OK;
     if (slot->spi_handle) {
+        /* Bus handover: clock one release byte with CS high before this slot's
+         * SPI device is torn down. The per-command release in
+         * sdspi_host_do_transaction() covers the normal path; this one covers
+         * teardown (sd_release_host), where a card that is still finishing a
+         * write would otherwise keep the shared MISO low and gag the next
+         * device on the bus (the ST25R3916, which has no reset line and cannot
+         * be recovered by a re-read). Must run while spi_handle is still
+         * registered. */
+        cs_high(slot);
+        release_bus(slot);
         spi_bus_remove_device(slot->spi_handle);
         slot->spi_handle = NULL;
         free(slot->block_buf);
