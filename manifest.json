@@ -1,5 +1,5 @@
 {
-  "name": "Fatal Core (Flipper Zero ESP32-S3 port)",
+  "name": "Fatalcore (Flipper Zero ESP32-S3 port)",
   "version": "2.0.10",
   "new_install_prompt_erase": true,
   "builds": [
