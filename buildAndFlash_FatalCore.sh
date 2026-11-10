@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build / flash the Flipper Zero ESP32 port for the Fatal Core board.
+# Build / flash the Flipper Zero ESP32 port for the Fatalcore board.
 #
 #   ./buildAndFlash_FatalCore.sh                 # build + flash (auto port)
 #   ./buildAndFlash_FatalCore.sh --build-only    # build only
@@ -22,7 +22,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [--port <device>] [--monitor] [--build-only]
 
-Builds the ESP32-S3 Flipper Zero port for the Fatal Core board.
+Builds the ESP32-S3 Flipper Zero port for the Fatalcore board.
 
 Options:
   -p, --port <device>  Serial device to flash (default: auto-detect)

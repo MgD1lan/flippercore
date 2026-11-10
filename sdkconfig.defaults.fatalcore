@@ -123,7 +123,7 @@ CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=2048
 
 # ---------------------------------------------------------------------------
-# Fatal Core specifics
+# Fatalcore specifics
 # ---------------------------------------------------------------------------
 # GPIO43 is the microSD CS line and GPIO44 drives the WS2812 on this board.
 # Those are UART0 TX/RX by default, so the console lives on USB-Serial-JTAG.

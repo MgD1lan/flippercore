@@ -2,7 +2,7 @@
  * @file furi_hal_ina219.h
  * INA219 current/voltage/power monitor driver (I2C).
  *
- * Used by boards that have no dedicated fuel gauge (e.g. Fatal Core, which
+ * Used by boards that have no dedicated fuel gauge (e.g. Fatalcore, which
  * uses a TP4056 charger + INA219 on the battery rail). The API intentionally
  * mirrors furi_hal_bq27220.h so furi_hal_power.c can pick whichever gauge is
  * populated at runtime.

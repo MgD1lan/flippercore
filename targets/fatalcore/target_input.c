@@ -1,6 +1,6 @@
 /**
  * @file target_input.c
- * Input driver: 6 GPIO push buttons (Fatal Core board).
+ * Input driver: 6 GPIO push buttons (Fatalcore board).
  *
  * Layout:
  *   Up 41 / Down 40 / Left 39 / Right 38 / Ok 0 / Back (Escape-Power) 21

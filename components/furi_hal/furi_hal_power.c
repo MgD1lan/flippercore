@@ -142,7 +142,7 @@ static volatile bool furi_hal_power_idle;
 
 /* Li-ion 1S discharge curve used when the board has no coulomb counter and
  * the charge level has to be derived from the measured pack voltage.
- * Fatal Core's INA219 reads the pack directly, so the endpoints are the
+ * Fatalcore's INA219 reads the pack directly, so the endpoints are the
  * pack limits used on this board: 3.20 V = empty, 4.20 V = full. */
 static const FuriHalPowerCurvePoint furi_hal_power_curve[] = {
     {3.20f, 0},
@@ -723,7 +723,7 @@ bool furi_hal_power_is_charging(void) {
         return furi_hal_bq27220_is_charging();
     }
     /* No charger IC on TP4056 boards: current flowing into the pack means the
-     * charger is active. Fatal Core's INA219 shunt is wired with the opposite
+     * charger is active. Fatalcore's INA219 shunt is wired with the opposite
      * polarity, so charging current reads negative here. */
     if(furi_hal_ina219_is_present()) {
         return furi_hal_ina219_get_current_ma() < -20;

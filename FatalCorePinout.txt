@@ -1,5 +1,5 @@
 # ============================================================
-#  FatalCorePinout.txt - "Fatal Core" (FATALCORE BTW) board
+#  FatalCorePinout.txt - Fatalcore board
 #  Target: ESP32-S3-WROOM-1 N16R8 (16 MB flash, 8 MB octal PSRAM)
 #
 #  Reference only: board_fatalcore.h is hand-maintained, it is NOT

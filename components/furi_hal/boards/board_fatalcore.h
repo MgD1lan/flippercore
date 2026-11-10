@@ -1,6 +1,6 @@
 /**
  * @file board_fatalcore.h
- * Board definition: Fatal Core (FATALCORE BTW) — ESP32-S3 Flipper Zero clone
+ * Board definition: Fatalcore — ESP32-S3 Flipper Zero clone
  *
  * MCU:      ESP32-S3-WROOM-1 N16R8 (16 MB flash, 8 MB octal PSRAM)
  * Display:  ST7789 320x172 via SPI (shared bus)
@@ -39,7 +39,7 @@
 #define BOARD_TARGET "esp32s3"
 
 /* ---- Buttons (active low, wired to GND) ----
- * Fatal Core: DOWN = GPIO40, LEFT = GPIO39 (verified on hardware; do not swap). */
+ * Fatalcore: DOWN = GPIO40, LEFT = GPIO39 (verified on hardware; do not swap). */
 #define BOARD_PIN_BTN_UP     41
 #define BOARD_PIN_BTN_DOWN   40
 #define BOARD_PIN_BTN_LEFT   39

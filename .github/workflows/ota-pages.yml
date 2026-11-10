@@ -1,4 +1,4 @@
-name: Build & Publish OTA (Fatal Core)
+name: Build & Publish OTA (Fatalcore)
 
 on:
   workflow_dispatch:
@@ -72,7 +72,7 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Firmware version: $V"
 
-      - name: Build Fatal Core
+      - name: Build Fatalcore
         shell: bash
         run: |
           set -euo pipefail

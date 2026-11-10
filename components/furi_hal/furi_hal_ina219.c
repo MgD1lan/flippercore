@@ -2,7 +2,7 @@
  * @file furi_hal_ina219.c
  * INA219 current/voltage/power monitor driver — ESP-IDF legacy I2C API.
  *
- * Board wiring (Fatal Core): INA219 at 0x40 on the shared I2C bus
+ * Board wiring (Fatalcore): INA219 at 0x40 on the shared I2C bus
  * (SDA=GPIO47, SCL=GPIO48) measuring the battery rail behind the TP4056.
  *
  * Unlike a coulomb-counting fuel gauge the INA219 only reports instantaneous
@@ -23,7 +23,7 @@ static const char* TAG = "INA219";
 #define BOARD_INA219_ADDR 0x40
 #endif
 
-/* Shunt resistor on the board, in milliohms. Fatal Core uses a 50 mΩ (1206)
+/* Shunt resistor on the board, in milliohms. Fatalcore uses a 50 mΩ (1206)
  * shunt (see the vendor BOM); most INA219 breakouts use 0.1 Ω, hence the
  * generic default below. */
 #ifndef BOARD_INA219_SHUNT_MOHM
