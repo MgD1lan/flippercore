@@ -823,6 +823,16 @@ static bool ir_tx_begin(uint32_t freq, float duty_cycle, bool carrier) {
     ir_tx.carrier_freq = freq;
     ir_tx.duty_cycle = duty_cycle;
 
+#if defined(BOARD_IR_TX_DUTY_CYCLE)
+    /* Board boost: raise the carrier duty cycle to the board's value. Average
+     * emitted power is proportional to it (same peak LED current), so this is
+     * what turns 33% into ~50% without touching the hardware. Raw signal
+     * users may ask for less, never for more than the board allows. */
+    if(ir_tx.duty_cycle < BOARD_IR_TX_DUTY_CYCLE) {
+        ir_tx.duty_cycle = BOARD_IR_TX_DUTY_CYCLE;
+    }
+#endif
+
     if(!BOARD_HAS_IR) {
         FURI_LOG_E("IR", "Board has no IR support");
         ir_tx_refuse(FuriHalInfraredTxErrorNoHardware);
@@ -862,7 +872,7 @@ static bool ir_tx_begin(uint32_t freq, float duty_cycle, bool carrier) {
     };
     rmt_carrier_config_t carrier_config = {
         .frequency_hz = freq,
-        .duty_cycle = duty_cycle,
+        .duty_cycle = ir_tx.duty_cycle,
         .flags = {
             .polarity_active_low = false,
             .always_on = false, /* Only modulate during mark (level=1) */
@@ -872,6 +882,12 @@ static bool ir_tx_begin(uint32_t freq, float duty_cycle, bool carrier) {
     ir_tx.packet_done = xSemaphoreCreateBinary();
     esp_err_t err = ir_tx.packet_done ? ESP_OK : ESP_ERR_NO_MEM;
     if(err == ESP_OK) err = rmt_new_tx_channel(&tx_chan_config, &ir_tx.channel);
+    if(err == ESP_OK) {
+        /* Strongest pad drive: the carrier edges reach the transistor base
+         * faster, so the 38 kHz waveform stays square instead of being
+         * rounded off by the pad's default slew. */
+        gpio_set_drive_capability(tx_gpio, GPIO_DRIVE_CAP_3);
+    }
     if(err == ESP_OK) {
         const rmt_tx_event_callbacks_t tx_callbacks = {.on_trans_done = ir_rmt_tx_done_callback};
         err = rmt_tx_register_event_callbacks(ir_tx.channel, &tx_callbacks, NULL);

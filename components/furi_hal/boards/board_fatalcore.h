@@ -155,6 +155,11 @@
 /* ---- Infrared ---- */
 #define BOARD_PIN_IR_TX 2  /* 2x IR LED via MMBT2222A */
 #define BOARD_PIN_IR_RX 1  /* TSOP4838 */
+/* Carrier duty cycle for transmission. The LED is driven through a transistor,
+ * so its average optical power follows the duty cycle at the same peak
+ * current: 0.33 -> 0.50 means 13 of 26 carrier ticks high instead of 8, i.e.
+ * ~1.6x more range with no extra stress on the LED or the transistor. */
+#define BOARD_IR_TX_DUTY_CYCLE 0.50f
 
 /* ---- NFC: ST25R3916 over SPI ----
  * The stock furi_hal_nfc.c is a PN532-over-I2C implementation. Setting
