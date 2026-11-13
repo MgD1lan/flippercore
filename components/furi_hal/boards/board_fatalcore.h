@@ -195,13 +195,6 @@
  * pull-up enabled to tell an actively driven low line from one that is merely
  * held by a resistor. Answers "is the front-end powered at all". */
 /* #define BOARD_NFC_IRQ_ADC_PROBE 1 */
-/* Bring the front-end up before the SD card enters SPI mode. The ST25R3916 has
- * no reset line on this board and powers up in its own default state, with its
- * MISO pull-down active; the card's init sequence then runs at the full bus
- * clock while the chip is still unconfigured and shares the same MISO. Doing
- * the chip first means the card never meets a front-end in its power-on state,
- * and the MISO level is defined before the first command. */
-#define BOARD_NFC_INIT_BEFORE_SD 1
 
 /* Diagnostic: log a system heartbeat and one task-state dump so an intermittent
  * UI freeze can be told apart from a full system wedge in the serial log. */

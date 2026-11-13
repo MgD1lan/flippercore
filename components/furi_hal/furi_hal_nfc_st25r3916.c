@@ -702,13 +702,6 @@ void furi_hal_nfc_early_probe(void) {
 static FuriHalNfcError furi_hal_nfc_init_impl(void);
 
 FuriHalNfcError furi_hal_nfc_is_hal_ready(void) {
-#if defined(BOARD_NFC_INIT_BEFORE_SD) && BOARD_NFC_INIT_BEFORE_SD
-    /* Startup-only bring-up: furi_hal_init() configures the front-end once,
-     * before the SD card enters SPI mode. Entering the app must not probe,
-     * retry or talk to the chip at all -- it only asks whether that single
-     * attempt succeeded, and shows the error screen when it did not. */
-    return furi_hal_nfc.ready ? FuriHalNfcErrorNone : FuriHalNfcErrorCommunication;
-#else
     if(!furi_hal_nfc.mutex) {
         furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     }
@@ -781,7 +774,6 @@ FuriHalNfcError furi_hal_nfc_is_hal_ready(void) {
     }
 
     return FuriHalNfcErrorNone;
-#endif
 }
 
 /* The actual bring-up. Split out of furi_hal_nfc_init() so that
@@ -1036,14 +1028,9 @@ static FuriHalNfcError furi_hal_nfc_init_impl(void) {
 }
 
 FuriHalNfcError furi_hal_nfc_init(void) {
-    if(furi_hal_nfc.mutex == NULL) {
-        furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
-    } else if(furi_hal_nfc.ready) {
-        /* Already brought up: boards with BOARD_NFC_INIT_BEFORE_SD run this
-         * from furi_hal_init(), before the SD card, and furi_hal_init() calls
-         * it again later. A configured front-end needs no second session. */
-        return FuriHalNfcErrorNone;
-    }
+    furi_check(furi_hal_nfc.mutex == NULL);
+
+    furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
 
     FuriHalNfcError error = furi_hal_nfc_init_impl();
     furi_hal_nfc.ready = (error == FuriHalNfcErrorNone);

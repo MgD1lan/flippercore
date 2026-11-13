@@ -299,19 +299,6 @@ void furi_hal_init(void) {
      * No filesystem is mounted here; the storage service still owns it. */
     furi_hal_spi_bus_handle_init(&furi_hal_spi_bus_handle_subghz);
     furi_delay_ms(100);
-#if defined(BOARD_NFC_INIT_BEFORE_SD) && BOARD_NFC_INIT_BEFORE_SD
-    /* Bring the NFC front-end up before the card: see BOARD_NFC_INIT_BEFORE_SD.
-     * The 100 ms above let both supplies settle, which is what the front-end
-     * needs on a cold boot (it powers up together with the MCU and has no
-     * reset line). */
-    FuriHalNfcError nfc_error = furi_hal_nfc_init();
-    if(nfc_error != FuriHalNfcErrorNone) {
-        ESP_LOGW(
-            TAG,
-            "Early NFC initialization failed (%d); the app will retry",
-            (int)nfc_error);
-    }
-#endif
     if(furi_hal_sd_init(false) != FuriStatusOk) {
         ESP_LOGW(TAG, "Early SD initialization failed; storage will retry");
     }
