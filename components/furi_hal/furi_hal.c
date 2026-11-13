@@ -202,6 +202,14 @@ void furi_hal_init_early(void) {
 #endif
 
 #if CONFIG_T_EMBED_PLUS_SD_RECOVERY || defined(BOARD_EARLY_SD_INIT)
+#ifdef BOARD_SPI_MISO_PULL_DOWN
+    /* Hold the shared MISO at a defined level from the very first instruction,
+     * before any device on SPI2 is selected or any clock is emitted. The bus
+     * code re-applies this pull once SPI2 exists; doing it here means the line
+     * is already low while the LCD and the radios are still unconfigured. */
+    static const GpioPin shared_miso = {.port = NULL, .pin = BOARD_PIN_SD_MISO};
+    furi_hal_gpio_init(&shared_miso, GpioModeInput, GpioPullDown, GpioSpeedLow);
+#endif
     /* Preload every shared-bus select before enabling its output. A reset
      * need not reset the peripherals: keep them deselected before power-up
      * and before any SPI clock, including the CC1101 probe. */
