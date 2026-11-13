@@ -185,18 +185,9 @@ static bool furi_hal_spi_bus_init_if_needed(FuriHalSpiBus* bus, const FuriHalSpi
          * wait for the card to become ready; a floating low line made every
          * single command burn the full 40 ms timeout, which turned each
          * 512-byte sector read into ~80 ms. Pull the line up so an idle bus
-         * reads as 0xFF.
-         *
-         * Boards whose idle MISO is low by design (BOARD_SPI_MISO_PULL_DOWN,
-         * fatalcore: the ST25R3916 pulls it down while deselected) take the
-         * opposite pull: there the pull-up would only form a divider with the
-         * chip's resistor and park the line near the input threshold. */
+         * reads as 0xFF. */
         if(bus->miso_pin != FURI_HAL_SPI_PIN_UNMAPPED) {
-#if defined(BOARD_SPI_MISO_PULL_DOWN) && BOARD_SPI_MISO_PULL_DOWN
-            gpio_set_pull_mode((gpio_num_t)bus->miso_pin, GPIO_PULLDOWN_ONLY);
-#else
             gpio_set_pull_mode((gpio_num_t)bus->miso_pin, GPIO_PULLUP_ONLY);
-#endif
         }
         ESP_LOGI(
             TAG,
