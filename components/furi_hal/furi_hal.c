@@ -202,6 +202,14 @@ void furi_hal_init_early(void) {
 #endif
 
 #if CONFIG_T_EMBED_PLUS_SD_RECOVERY || defined(BOARD_EARLY_SD_INIT)
+#ifdef BOARD_SPI_MISO_PULL_DOWN
+    /* Hold the shared MISO at a defined level from the very first instruction,
+     * before any device on SPI2 is selected or any clock is emitted. The bus
+     * code re-applies this pull once SPI2 exists; doing it here means the line
+     * is already low while the LCD and the radios are still unconfigured. */
+    static const GpioPin shared_miso = {.port = NULL, .pin = BOARD_PIN_SD_MISO};
+    furi_hal_gpio_init(&shared_miso, GpioModeInput, GpioPullDown, GpioSpeedLow);
+#endif
     /* Preload every shared-bus select before enabling its output. A reset
      * need not reset the peripherals: keep them deselected before power-up
      * and before any SPI clock, including the CC1101 probe. */
@@ -299,6 +307,19 @@ void furi_hal_init(void) {
      * No filesystem is mounted here; the storage service still owns it. */
     furi_hal_spi_bus_handle_init(&furi_hal_spi_bus_handle_subghz);
     furi_delay_ms(100);
+#if defined(BOARD_NFC_INIT_BEFORE_SD) && BOARD_NFC_INIT_BEFORE_SD
+    /* Bring the NFC front-end up before the card: see BOARD_NFC_INIT_BEFORE_SD.
+     * The 100 ms above let both supplies settle, which is what the front-end
+     * needs on a cold boot (it powers up together with the MCU and has no
+     * reset line). */
+    FuriHalNfcError nfc_error = furi_hal_nfc_init();
+    if(nfc_error != FuriHalNfcErrorNone) {
+        ESP_LOGW(
+            TAG,
+            "Early NFC initialization failed (%d); the app will retry",
+            (int)nfc_error);
+    }
+#endif
     if(furi_hal_sd_init(false) != FuriStatusOk) {
         ESP_LOGW(TAG, "Early SD initialization failed; storage will retry");
     }

@@ -88,9 +88,17 @@ static FuriHalNfcError furi_hal_nfc_turn_on_osc(const FuriHalSpiBusHandle* handl
  * boot it comes up together with the MCU and both its oscillator and its
  * internal power-on reset need to settle. One retry was not always enough (the
  * first boot after a flash could still fail until a manual reboot); a few
- * attempts separated by a short delay let the app recover on its own. */
-#define FURI_HAL_NFC_READY_ATTEMPTS       4
-#define FURI_HAL_NFC_READY_RETRY_DELAY_MS 60
+ * attempts separated by a short delay let the app recover on its own.
+ *
+ * Measured in the field: on a low battery the rail sags during the boot
+ * sequence and the front-end can come up wedged (every register reads back
+ * 0x00) even though it is fine; a manual reboot on a charged battery then
+ * works. The window below covers that case too - it gives the rail roughly two
+ * seconds to recover after the charger is plugged in, so the app heals itself
+ * instead of asking for a reboot. The cost is paid only when the chip is not
+ * answering: a healthy front-end passes on the first attempt. */
+#define FURI_HAL_NFC_READY_ATTEMPTS       8
+#define FURI_HAL_NFC_READY_RETRY_DELAY_MS 250
 
 /* Start the oscillator without relying on a readable MISO or on the GPIO IRQ
  * handler (which is not installed yet at this point). The write goes straight
@@ -755,7 +763,11 @@ FuriHalNfcError furi_hal_nfc_is_hal_ready(void) {
          * 0x00), so the way back without a reboot is a full re-init:
          * SET_DEFAULT, a fresh SPI device and the oscillator wake. Downgrade
          * readiness so the next loop cycle re-runs init. */
-        FURI_LOG_W(TAG, "is_hal_ready: chip not answering, re-initialising (attempt %d)", attempt);
+        FURI_LOG_W(
+            TAG,
+            "is_hal_ready: chip not answering (IC_IDENTITY=0x%02X), re-initialising (attempt %d)",
+            chip_id,
+            attempt);
         furi_hal_nfc.ready = false;
         furi_delay_ms(FURI_HAL_NFC_READY_RETRY_DELAY_MS);
     }
@@ -1028,9 +1040,14 @@ static FuriHalNfcError furi_hal_nfc_init_impl(void) {
 }
 
 FuriHalNfcError furi_hal_nfc_init(void) {
-    furi_check(furi_hal_nfc.mutex == NULL);
-
-    furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+    if(furi_hal_nfc.mutex == NULL) {
+        furi_hal_nfc.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+    } else if(furi_hal_nfc.ready) {
+        /* Already brought up: boards with BOARD_NFC_INIT_BEFORE_SD run this
+         * from furi_hal_init(), before the SD card, and furi_hal_init() calls
+         * it again later. A configured front-end needs no second session. */
+        return FuriHalNfcErrorNone;
+    }
 
     FuriHalNfcError error = furi_hal_nfc_init_impl();
     furi_hal_nfc.ready = (error == FuriHalNfcErrorNone);

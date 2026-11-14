@@ -114,6 +114,17 @@
 #define BOARD_SD_RECOVERY     1
 #define BOARD_EARLY_SD_INIT   1
 #define BOARD_SD_SPI_FREQ_KHZ 10000
+/* MISO (GPIO8) is the one line every device on SPI2 shares and every device
+ * tri-states when it is not selected. On this board the idle level is low: the
+ * ST25R3916 pulls MISO down by itself while SS is high (IO_CONF2), and the line
+ * has no pull-up on the PCB. The generic bus code pulls a shared MISO *up* so
+ * that a released line reads 0xFF for the SD card, which here only leaves a
+ * resistive divider sitting somewhere near the input threshold -- exactly where
+ * one edge coupled from the 40 MHz LCD clock flips the sampled level, and the
+ * NFC front-end then answers with a corrupted id (0x27/0x00 instead of 0x2A).
+ * Hold the line down instead, so an idle MISO reads a solid 0 and every slave
+ * has to drive it actively to be heard. */
+#define BOARD_SPI_MISO_PULL_DOWN 1
 /* Bring-up diagnostic: measure an idle MISO (internal pull-up/pull-down and a
  * short drive-high) right after mount. Tells an unresponsive ready-poll apart
  * from a chip holding the shared line down. Toggles the pull resistors on a
@@ -195,6 +206,13 @@
  * pull-up enabled to tell an actively driven low line from one that is merely
  * held by a resistor. Answers "is the front-end powered at all". */
 /* #define BOARD_NFC_IRQ_ADC_PROBE 1 */
+/* Bring the front-end up before the SD card enters SPI mode. The ST25R3916 has
+ * no reset line on this board and powers up in its own default state, with its
+ * MISO pull-down active; the card's init sequence then runs at the full bus
+ * clock while the chip is still unconfigured and shares the same MISO. Doing
+ * the chip first means the card never meets a front-end in its power-on state,
+ * and the MISO level is defined before the first command. */
+#define BOARD_NFC_INIT_BEFORE_SD 1
 
 /* Diagnostic: log a system heartbeat and one task-state dump so an intermittent
  * UI freeze can be told apart from a full system wedge in the serial log. */
